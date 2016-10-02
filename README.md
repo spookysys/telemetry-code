@@ -1,2 +1,2 @@
-# telemetrics-code
+# telemetry-code
 Code for my rocket
