@@ -2,7 +2,7 @@
 #include "common.hpp"
 
 
-class Logger
+class Logger : public Print
 {
   Serial_* serial = nullptr;
 public:
@@ -11,10 +11,28 @@ public:
   
   void begin(Serial_* serial) {
     this->serial = serial;
-    if (serial)
-      while(!*serial);
   }
 
+  virtual size_t write(uint8_t op)
+  {
+    if (serial)
+      serial->write(op);
+  }
+  virtual size_t write(const uint8_t *buffer, size_t size)
+  {
+    if (serial)
+      serial->write(buffer, size);
+  }
+  virtual void flush() 
+  {
+    if (serial)
+      serial->flush();
+  }
+
+  using Print::write; // pull in write(str) and write(buf, size) from Print
+
+
+  /*  
   template<typename... Args>
   void print(Args&&... args)
   {
@@ -35,12 +53,7 @@ public:
     if (serial)
       serial->write(std::forward<Args>(args)...);
   }
-
-  void flush()
-  {
-    if (serial)
-      serial->flush();
-  }
+  */
 };
 
 extern Logger logger;

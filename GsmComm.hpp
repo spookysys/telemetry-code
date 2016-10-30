@@ -19,7 +19,7 @@ public:
   void begin() {
     logger.println("GSM?");
 
-    gsmSerial.begin();
+    //gsmSerial.begin();
     
     // calibrate baud
     gsmSerial.setTimeout(100);
@@ -95,4 +95,5 @@ public:
   
 };
 
+extern GsmComm gsmComm;
 

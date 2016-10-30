@@ -2,7 +2,9 @@
 #include "common.hpp"
 #include "Logger.hpp"
 #include "SimCom.hpp"
+#include "GsmSerial.hpp"
 #include "GsmComm.hpp"
+#include "GpsComm.hpp"
 
 
 
@@ -23,20 +25,23 @@ int freeRam ()
   return &stack_dummy - sbrk(0); 
 }
 
-GsmComm gsmComm;
-
 
 void setup() {
 
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH); 
 
+  // try bring up serial for 1 sec
   Serial.begin(74880);
-  logger.begin(&Serial);
+  for (int i=0; i<10; i++) {
+    if (Serial) break;
+    delay(100);
+  }
+  logger.begin(Serial ? &Serial : nullptr);
   simCom.begin();
   gsmSerial.begin();
   gsmComm.begin();
-  //gpsComm.begin();
+  gpsComm.begin();
 
   
   logger.println("Setup done!");
@@ -64,7 +69,7 @@ void loop() {
   }
 /*
   static int teller=0;
-  static int toggler=0;
+ static int toggler=0;
   teller++;
   
   if (teller==100) {
