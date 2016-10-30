@@ -41,7 +41,7 @@ void setup() {
   simCom.begin();
   gsmSerial.begin();
   gsmComm.begin();
-  gpsComm.begin();
+  //gpsComm.begin();
 
   
   logger.println("Setup done!");
@@ -61,7 +61,6 @@ void loop() {
 
   while (Serial.available()) {
     char ch = Serial.read();
-    Serial.write(ch);
     gsmSerial.write(ch);
   }
   while (gsmSerial.available()) {

@@ -83,7 +83,7 @@ namespace {
   const SercomRXPad padRX = SERCOM_RX_PAD_1; // Use pad 1 for RX
   const SercomUartTXPad padTX = UART_TX_PAD_0; // UART_TX_PAD_0 or UART_TX_RTS_CTS_PAD_0_2_3  
   SERCOM* sercom = &sercom2;
-  MyRingBuffer<512> rxBuffer;
+  MyRingBuffer<1024> rxBuffer;
 }
 
 void GsmSerial::begin()

@@ -48,10 +48,12 @@ public:
     }
     if (sercom->isUARTError()) {
       sercom->acknowledgeUARTError();
-      logger.println("GpsSerial Error Detected");
-      // TODO: if (sercom->isBufferOverflowErrorUART()) ....
-      // TODO: if (sercom->isFrameErrorUART()) ....
-      // TODO: if (sercom->isParityErrorUART()) ....
+      logger.println();
+      logger.print("GPS-ERR: ");
+      if (sercom->isBufferOverflowErrorUART()) logger.print("bufferoverflow");
+      if (sercom->isFrameErrorUART()) logger.print("frame");
+      if (sercom->isParityErrorUART()) logger.print("parity");
+      logger.println();
       sercom->clearStatusUART();
     }
   }
