@@ -55,7 +55,18 @@ public:
     
     logger.println("GSM!");
 
+
     getWeatherData(0,0);
+
+    getTime();
+  }
+
+
+  void getTime()
+  {
+    gsmSerial.println("AT+CIPGSMLOC=1,1");
+    assert(gsmSerial.find("+CIPGSMLOC:") != -1);
+    delay(100);
   }
 
   
