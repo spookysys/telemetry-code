@@ -2,27 +2,25 @@
 #include "common.hpp"
 #include "Logger.hpp"
 #include "SimCom.hpp"
-#include "GsmSerial.hpp"
-#include "GsmComm.hpp"
-#include "GpsComm.hpp"
-
-
-
-
 
 extern "C" char *sbrk(int i);
 
-float readBatteryVoltage()
-{
-  static const auto VBAT_PIN = A7;
-  static const float ref_volt = 3.0f;
-  return analogRead(VBAT_PIN)*(ref_volt*2.f/1024.f);
-}
+namespace {
+  
+  
+  float readBatteryVoltage()
+  {
+    static const auto VBAT_PIN = A7;
+    static const float ref_volt = 3.0f;
+    return analogRead(VBAT_PIN)*(ref_volt*2.f/1024.f);
+  }
+  
+  int freeRam () 
+  {  
+    char stack_dummy = 0;  
+    return &stack_dummy - sbrk(0); 
+  }
 
-int freeRam () 
-{  
-  char stack_dummy = 0;  
-  return &stack_dummy - sbrk(0); 
 }
 
 
@@ -31,18 +29,15 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH); 
 
-  // try bring up serial for 1 sec
+  // try bring up serial for 4 sec
   Serial.begin(74880);
-  for (int i=0; i<10; i++) {
+  for (int i=0; i<40; i++) {
     if (Serial) break;
     delay(100);
   }
   logger.begin(Serial ? &Serial : nullptr);
-  simCom.begin();
-  gsmSerial.begin();
-  gsmComm.begin();
-  //gpsComm.begin();
-
+  logger.println("Hey there!");
+  simcom::begin();
   
   logger.println("Setup done!");
 }
@@ -53,19 +48,21 @@ void loop() {
   //logger.print("VBat: " ); 
   //logger.println(misc::readBatteryVoltage());
   //logger.print("Ram: ");
-  //logger.println(misc::freeRam());
+  //logger.println(freeRam());
+
+  simcom::update();
   //gsmComm.update();
   //gpsComm.update();
   //gpsComm.dumpAll();
 
 
-  while (Serial.available()) {
-    char ch = Serial.read();
-    gsmSerial.write(ch);
-  }
-  while (gsmSerial.available()) {
-    Serial.write((char)gsmSerial.read());
-  }
+//  while (Serial.available()) {
+//    char ch = Serial.read();
+//    gsmSerial.write(ch);
+//  }
+//  while (gsmSerial.available()) {
+//    Serial.write((char)gsmSerial.read());
+//  }
 /*
   static int teller=0;
  static int toggler=0;

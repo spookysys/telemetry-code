@@ -1,17 +1,14 @@
-#ifndef SIMCOM_HPP
-#define SIMCOM_HPP
-
+#pragma once
 #include "common.hpp"
 
-class SimCom
+namespace simcom
 {
-public:
+  void begin();
   bool isOn();
   void powerOnOff();
-  void begin();
-};
+  void update();
+}
 
-extern SimCom simCom;
 
-#endif
+
 

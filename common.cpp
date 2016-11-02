@@ -3,12 +3,16 @@
 
 void assert_handler(const char* expr, const char* file, int line)
 {
+  //noInterrupts();
+  
   logger.print("Assertion failed: ");
   logger.println(expr);
   logger.print(" in ");
   logger.print(file);
   logger.print(":");
   logger.print(line);
+  logger.println();
+  logger.println();
   logger.flush();
  
   // blink the line number
@@ -29,9 +33,24 @@ void assert_handler(const char* expr, const char* file, int line)
       delay(200);
     }
   }
+  //interrupts();
   #ifdef DEBUG
-  abort();
+  //abort();
   #endif
 }  
+
+// hack for basic STL
+// https://forum.pjrc.com/threads/23467-Using-std-vector?p=69787&viewfull=1#post69787
+namespace std {
+  void __throw_bad_alloc()
+  {
+    assert(!"Unable to allocate memory");
+  }
+  
+  void __throw_length_error( char const*e )
+  {
+    assert(!(String("Length Error :")+e));
+  }
+}
 
 
