@@ -83,7 +83,7 @@ public:
     int i = pop_idx;
     for (; i!=push_idx &&  is_term(buff[i]); i=next_idx(i)); // skip leading terminators
     for (; i!=push_idx && !is_term(buff[i]); i=next_idx(i)) ret += buff[i];
-    for (; i!=push_idx &&  is_term(buff[i]); i=next_idx(i)); // skip trailing terminators
+    if (i!=push_idx && is_term(buff[i])) i=next_idx(i); // skip one trailing terminator (so we don't start processing binary data which happens to follow the string)
     pop_idx = i;
     return ret;
   }

@@ -105,7 +105,7 @@ void OpenGsmSerial()
   logger.println("GSM: Detecting baud");
   for (int i = 0; i <= 10; i++) {
     gsmSerial.println("AT");
-    if (gsmSerial.readln(100)=="OK") break;
+    if (gsmSerial.readln_wait(100)=="OK") break;
     assert(i < 10);
   }
   logger.println("Done!");
@@ -117,12 +117,12 @@ void OpenGsmSerial()
   logger.println("GSM: Disabling echo");
   gsmSerial.setTimeout(1000);
   gsmSerial.println("ATE0");
-  assert(gsmSerial.readln()=="OK");
+  assert(gsmSerial.readln_wait()=="OK");
   logger.println();
   
   logger.println("GSM: Enabling flow control");
   gsmSerial.println("AT+IFC=2,2");
-  assert(gsmSerial.readln()=="OK");
+  assert(gsmSerial.readln_wait()=="OK");
 }
 
 void OpenGpsSerial()
@@ -178,19 +178,13 @@ void update()
   }
 
 
-  // parse gsm input (depend on there being a \n every bufferfull)
-  while (gsmSerial.hasString())
-  {
-    String line = gsmSerial.popString();
-    if (!gsm_inited && line == "SMS Ready") {
-      gsm_inited = true;
-      logger.println("GSM Initialized!");
-    }
+  String str = gsmSerial.readln_imm();
+  if (str.length()) {
+    logger.println("Got something!");
   }
+    
 
- // gsmSerial.processCallbacks();
-
-  delay(500);
+  delay(100);
   
   /*
   static int hello=0;

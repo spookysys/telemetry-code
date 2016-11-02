@@ -68,32 +68,40 @@ public:
     bool (*callback)(const String& str) = nullptr;
 
     // wait for string, return 0 if timed out
-    String readln(int timeout=1000)
+    String readln_wait(int timeout=1000)
     {
-      logger.println("I am in readln");
       int delta = (timeout+16)>>4;
       timeout = delta<<4;
       for (int i=timeout-1; i>=0; i-=delta) {
         while (hasString()) {
           String str = popString();
-          logger.print("Popped: ");
-          logger.println(str);
           if (!callback(str)) {
-            logger.println("(returned)");
+            logger.print("readln_wait: ");
+            logger.println(str);
             return str;
           }
         }
-        if (i>0) {
-          logger.print("Waiting ");
-          logger.println(delta);
-          delay(delta);
+        if (i>0) delay(delta);
+      }
+      return "";
+    }
+
+    // return string if present, else return 0 immediately
+    String readln_imm()
+    {
+      while (hasString()) {
+        String str = popString();
+        if (!callback(str)) {
+          logger.print("readln_imm: ");
+          logger.println(str);
+          return str;
         }
       }
       return "";
     }
 
     // process callbacks, ignoring unexpected strings
-    void processCallbacks()
+    void process_callbacks()
     {
       while (hasString()) {
         String str = popString();
