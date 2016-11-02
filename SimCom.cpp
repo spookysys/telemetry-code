@@ -73,7 +73,7 @@ void powerOnOff() {
 void OpenGsmSerial()
 {
   logger.println("GSM: Opening serial");
-  gsmSerial.begin("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
+  gsmSerial.begin_hs("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
   logger.println();  
   
   logger.println("GSM: Detecting baud");
@@ -84,15 +84,14 @@ void OpenGsmSerial()
     assert(i < 10);
   }
   logger.println();  
-  gsmSerial.setTimeout(1000);
 
   logger.println("GSM: Disabling echo");
+  gsmSerial.setTimeout(1000);
   gsmSerial.println("ATE0");
   assert(gsmSerial.find("OK\r") != -1);
   logger.println();
   
   logger.println("GSM: Enabling flow control");
-  gsmSerial.enableHandshaking(2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS SERCOM2.3 */);
   gsmSerial.println("AT+IFC=2,2");
   assert(gsmSerial.find("OK\r") != -1);
   logger.println();  

@@ -18,7 +18,7 @@ public:
   void begin(unsigned long) { assert(0); }
   void begin(unsigned long baudrate, uint16_t config) { assert(0); }
   void begin(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom);
-  void enableHandshaking(uint8_t pinRTS, uint8_t pinCTS);
+  void begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom);
   void end();
   void flush();
   void IrqHandler();
