@@ -53,8 +53,10 @@ namespace simcom
     pinMode(PIN_PWRKEY, OUTPUT);
     digitalWrite(PIN_PWRKEY, LOW);
     delay(1000);
-    while(isOn()==startStatus) {
+    for (int i=0; i<=20; i++) {
       delay(100);
+      if (isOn()!=startStatus) break;
+      assert(i<20);
     }
     digitalWrite(PIN_PWRKEY, HIGH);
     pinMode(PIN_PWRKEY, INPUT);
@@ -79,19 +81,21 @@ namespace simcom
     pinMode(PIN_GPS_EN, INPUT); // high-z
     pinMode(PIN_STATUS, INPUT_PULLDOWN);
     pinMode(PIN_PWRKEY, INPUT_PULLDOWN);
-  
-    // If module already on, turn it off
+
+    // If module already on, reset it
     if (isOn()) {
       powerOnOff();
       assert(!isOn());
       delay(800);
+      assert(!isOn());
     }
 
     // Turn module on
-    assert(!isOn());
-    powerOnOff();
-    assert(isOn());
-
+    if (!isOn()) {
+      powerOnOff();
+      assert(isOn());
+    }
+    
     // GSM
     logger.println("GSM: Enabling serial");
     gsmSerial.begin("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
@@ -112,6 +116,14 @@ namespace simcom
     gsmSerial.println("ATE0");
     assert(gsmSerial.find("OK\r") != -1);
     logger.println();
+
+    // Enable hardware flow control
+    /*
+    gsmSerial.setTimeout(1000);
+    gsmSerial.println("AT+IFC=2,2");
+    assert(gsmSerial.find("OK\r") != -1);
+    logger.println();
+    */
 
     // GPS
     //logger.println("GPS: Enabling serial");
@@ -146,6 +158,7 @@ namespace simcom
     }
 
     // maintain connection every 10 seconds
+    /*
     static long long last_connection_attempt = -10000;
     if (gsm_inited && t_millis >= last_connection_attempt+10000) {
       last_connection_attempt = t_millis;
@@ -186,7 +199,7 @@ namespace simcom
       logger.println();
         
     }
-
+    */
     
   }
 
