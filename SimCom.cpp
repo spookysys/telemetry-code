@@ -15,8 +15,8 @@
 // serials and irq handlers
 namespace simcom
 {
-MySerial gsmSerial;
-MySerial gpsSerial;
+  MySerial gsmSerial;
+  MySerial gpsSerial;
 }
 
 void SERCOM2_Handler()
@@ -70,31 +70,59 @@ void powerOnOff() {
   assert(startStatus != stopStatus);
 }
 
+
+bool GsmLineCallback(const String& str)
+{
+  static const char* gobbleList[] = {
+    "AT", // may be echoed during baud-detection
+    "ATE0", // may be echoed while turning off echo
+    "RDY", // may be printed during initialization
+    "Call Ready", // may be printed during initialization
+    "SMS Ready", // may be printed during initialization
+  };
+
+  for (int i=0; i<sizeof(gobbleList)/sizeof(*gobbleList); i++) {
+    //logger.println(i);
+    if (str == gobbleList[i]) {
+      logger.print("\"");
+      logger.print(str);
+      logger.println("\" - gobbled by callback");
+      return true;
+    }
+  }
+  
+  return false;
+}
+
+
 void OpenGsmSerial()
 {
   logger.println("GSM: Opening serial");
   gsmSerial.begin_hs("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
-  logger.println();  
-  
+  gsmSerial.callback = GsmLineCallback;
+  logger.println();
+
   logger.println("GSM: Detecting baud");
-  gsmSerial.setTimeout(100);
   for (int i = 0; i <= 10; i++) {
     gsmSerial.println("AT");
-    if (gsmSerial.find("OK\r")) break;
+    if (gsmSerial.readln(100)=="OK") break;
     assert(i < 10);
   }
-  logger.println();  
+  logger.println("Done!");
+  logger.println();
+
+
+  String ret;
 
   logger.println("GSM: Disabling echo");
   gsmSerial.setTimeout(1000);
   gsmSerial.println("ATE0");
-  assert(gsmSerial.find("OK\r") != -1);
+  assert(gsmSerial.readln()=="OK");
   logger.println();
   
   logger.println("GSM: Enabling flow control");
   gsmSerial.println("AT+IFC=2,2");
-  assert(gsmSerial.find("OK\r") != -1);
-  logger.println();  
+  assert(gsmSerial.readln()=="OK");
 }
 
 void OpenGpsSerial()
@@ -144,26 +172,26 @@ void update()
   long long t_millis = millis();
 
   // send commands from serial to GSM port
-#ifdef DEBUG
   while (Serial.available()) {
     char ch = Serial.read();
     gsmSerial.write(ch);
   }
-#endif
+
 
   // parse gsm input (depend on there being a \n every bufferfull)
-  while (gsmSerial.contains('\n'))
+  while (gsmSerial.hasString())
   {
-    String line = gsmSerial.readStringUntil('\n');
-    line.trim();
+    String line = gsmSerial.popString();
     if (!gsm_inited && line == "SMS Ready") {
       gsm_inited = true;
       logger.println("GSM Initialized!");
     }
   }
 
-  delay(500);
+ // gsmSerial.processCallbacks();
 
+  delay(500);
+  
   /*
   static int hello=0;
   hello++;

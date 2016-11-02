@@ -3,77 +3,90 @@
 #include <array>
 
 // ring buffer for serials
-template<int S, typename T>
+template<int S>
 class MyRingBuffer
 {
 private:
-  std::array<T, S> _aucBuffer;
-  int _iHead ;
-  int _iTail ;
+  std::array<char, S> buff;
+  int push_idx;
+  int pop_idx;
+  static bool is_term(char ch)
+  {
+    return ch==0 || ch=='\n' || ch=='\r';
+  }
+  static int next_idx(int index)
+  {
+    return (uint32_t)(index + 1) % S;
+  }
 public:
+  
   MyRingBuffer()
   {
-    memset( _aucBuffer.data(), 0, S);
+    memset(buff.data(), 0, S);
     clear();
   }
-  int capacity() 
-  {
-    return _aucBuffer.size();
-  }
-  void store_char(T c)
-  {
-    int i = nextIndex(_iHead);
-    //assert(i != _iTail);
-    _aucBuffer[_iHead] = c ;
-    _iHead = i ;
-  }
+
   void clear()
   {
-    _iHead = 0;
-    _iTail = 0;
+    push_idx = 0;
+    pop_idx = 0;
+  }
+  
+  int capacity() 
+  {
+    return S-1;
   }
 
-  int read_char()
-  {
-    if(_iTail == _iHead)
-      return -1;
-  
-    T value = _aucBuffer[_iTail];
-    _iTail = nextIndex(_iTail);
-  
-    return value;
-  }
-  
   int available()
   {
-    int delta = _iHead - _iTail;  
+    int delta = push_idx - pop_idx;  
     if(delta < 0)
       return S + delta;
     else
       return delta;
   }
+
+  bool is_full()
+  {
+    return (next_idx(push_idx) == pop_idx);
+  }
+
+  void push(char c)
+  {
+    assert(next_idx(push_idx) != pop_idx);
+    buff[push_idx] = c;
+    push_idx = next_idx(push_idx);
+  }
+
+  int pop()
+  {
+    assert(pop_idx != push_idx);
+    auto value = buff[pop_idx];
+    pop_idx = next_idx(pop_idx);
+    return value;
+  }
+
   int peek()
   {
-    if(_iTail == _iHead)
-      return -1;
-  
-    return _aucBuffer[_iTail];
+    assert(pop_idx != push_idx);
+    return buff[pop_idx];
   }
-  bool isFull()
-  {
-    return (nextIndex(_iHead) == _iTail);
-  }
-  bool contains(char ch)
-  {
-    for (int i=_iTail; i!=_iHead; i=nextIndex(i)) {
-      if (ch==_aucBuffer[i]) return true;
-    }
+
+  bool has_string() {
+    for (int i=pop_idx; i!=push_idx; i=next_idx(i))
+      if (!is_term(buff[i])) return true;
     return false;
   }
-private:
-  int nextIndex(int index)
-  {
-    return (uint32_t)(index + 1) % S;
+
+  String pop_string() {
+    String ret;
+    int i = pop_idx;
+    for (; i!=push_idx &&  is_term(buff[i]); i=next_idx(i)); // skip leading terminators
+    for (; i!=push_idx && !is_term(buff[i]); i=next_idx(i)) ret += buff[i];
+    for (; i!=push_idx &&  is_term(buff[i]); i=next_idx(i)); // skip trailing terminators
+    pop_idx = i;
+    return ret;
   }
+
 };
 

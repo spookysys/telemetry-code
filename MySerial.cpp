@@ -32,20 +32,21 @@ void MySerial::begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX,
 void MySerial::updateRts()
 {
   if (!handshakeEnabled) return;
+  
+  bool changed = false;
   if (curRts==false && rxBuffer.available() >= rxBuffer.capacity()*2/3) 
   {
-    //logger.println();
-    //logger.println("RTS=1");
     curRts = true;
-    digitalWrite(pinRTS, true);
+    changed = true;
   } 
   else if (curRts==true && rxBuffer.available() <= rxBuffer.capacity()*1/3)
   { 
-    //logger.println();
-    //logger.println("RTS=0");
     curRts = false;
-    digitalWrite(pinRTS, false);
+    changed = true;
   }
+
+  if (changed)
+    digitalWrite(pinRTS, curRts);
 }
 
 void MySerial::end()
@@ -63,17 +64,18 @@ void MySerial::flush()
 void MySerial::IrqHandler()
 {
   if (!sercom) return; // not yet inited?
+  
   if (sercom->availableDataUART()) {
     auto tmp = sercom->readDataUART();
-    logger.write(tmp);
-    if (rxBuffer.isFull()) {
-      logger.print(name);
-      logger.println(" RX Buffer full!");
+    //logger.write(tmp);
+    if (rxBuffer.is_full()) {
+      assert(!"RX Buffer full!");
     } else {
-      rxBuffer.store_char(tmp);
+      rxBuffer.push(tmp);
       updateRts();
     }
   }
+  
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
     logger.print(name);
@@ -83,11 +85,12 @@ void MySerial::IrqHandler()
     // TODO: if (sercom->isParityErrorUART()) ....
     sercom->clearStatusUART();
   }
+
 }
 
 int MySerial::available()
 {
-  return rxBuffer.available();
+  return rxBuffer.available(); 
 }
 
 int MySerial::availableForWrite()
@@ -103,23 +106,24 @@ int MySerial::peek()
 
 int MySerial::read()
 {
-  auto tmp = rxBuffer.read_char();
+  if (available()==0) return -1;
+  char ch = rxBuffer.pop();
   updateRts();
-  return tmp;
+  return ch;
 }
 
 size_t MySerial::write(const uint8_t data)
 {
   logger.write(data);
+  //while (!availableForWrite());
   sercom->writeDataUART(data);
   return 1;
 }
 
-bool MySerial::contains(char ch)
-{
-  return rxBuffer.contains('\n');
-}
 
+
+
+/*
 int MySerial::findEither(const char* strings[]) {
   int tNum=0;
   while (strings[tNum]) tNum++;
@@ -135,4 +139,4 @@ int MySerial::findEither(const char* strings[]) {
 int MySerial::findAll(const char* strings[]) {
   assert(!"Not implemented");
 }
-
+*/
