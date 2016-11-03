@@ -73,9 +73,12 @@ public:
   }
 
   bool has_string() {
-    for (int i=pop_idx; i!=push_idx; i=next_idx(i))
-      if (!is_term(buff[i])) return true;
-    return false;
+    int i = pop_idx;
+    for (; i!=push_idx &&  is_term(buff[i]); i=next_idx(i)); // skip leading terminators
+    if (i==push_idx) return false; // no string
+    for (; i!=push_idx && !is_term(buff[i]); i=next_idx(i)); // skip the string
+    if (i==push_idx) return false; // no terminal to end the string
+    return true; // goodie!
   }
 
   String pop_string() {
