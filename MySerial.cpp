@@ -69,7 +69,7 @@ void MySerial::IrqHandler()
   
   if (sercom->availableDataUART()) {
     auto tmp = sercom->readDataUART();
-    //logger.write(tmp);
+    logger.write(tmp);
     if (rxBuffer.is_full()) {
       assert(!"RX Buffer full!");
     } else {

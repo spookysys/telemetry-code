@@ -46,7 +46,12 @@ namespace std {
   {
     assert(!"Unable to allocate memory");
   }
-  
+
+  void __throw_bad_function_call()
+  {
+    assert(!"Bad function call");
+  }
+    
   void __throw_length_error( char const*e )
   {
     assert(!(String("Length Error :")+e));
