@@ -45,12 +45,24 @@ void setup() {
 
 
 void loop() {
+  static unsigned long timestamp = 0; 
+  unsigned long delta;
+  {
+    unsigned long new_timestamp = millis();
+    if (timestamp==0) delta = 0;
+    else delta = new_timestamp-timestamp;
+    timestamp = new_timestamp;
+  }
+
+
+  
+  simcom::update(timestamp, delta);
+
   //logger.print("VBat: " );
   //logger.println(misc::readBatteryVoltage());
   //logger.print("Ram: ");
   //logger.println(freeRam());
 
-  simcom::update();
   //gsmComm.update();
   //gpsComm.update();
   //gpsComm.dumpAll();
@@ -99,7 +111,8 @@ void loop() {
   // blink the mid-led
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-  delay(100);
+  delay(500);
   digitalWrite(PIN_LED, LOW);
-  delay(100);
+  delay(500);
+
 }

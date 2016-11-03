@@ -16,8 +16,10 @@ void MySerial::begin(const char* name, unsigned long baudrate, uint8_t pinRX, ui
   sercom->enableUART();
 }
 
-void MySerial::begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
+void MySerial::begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, _EPioType pinTypeRTS, _EPioType pinTypeCTS, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
 {
+  pinPeripheral(pinRTS, pinTypeRTS);
+  pinPeripheral(pinCTS, pinTypeCTS);
   this->begin(name, baudrate, pinRX, pinTX, pinTypeRX, pinTypeTX, padRX, padTX, sercom);
   this->handshakeEnabled = true;
   this->pinRTS = pinRTS;
@@ -95,7 +97,7 @@ int MySerial::available()
 
 int MySerial::availableForWrite()
 {
-  if (handshakeEnabled && digitalRead(pinCTS)) return false;
+  //if (handshakeEnabled && digitalRead(pinCTS)) return false;
   return (sercom->isDataRegisterEmptyUART() ? 1 : 0);
 }
 

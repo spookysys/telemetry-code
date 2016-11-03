@@ -98,7 +98,7 @@ bool GsmLineCallback(const String& str)
 void OpenGsmSerial()
 {
   logger.println("GSM: Opening serial");
-  gsmSerial.begin_hs("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
+  gsmSerial.begin_hs("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
   gsmSerial.callback = GsmLineCallback;
   logger.println();
 
@@ -108,7 +108,6 @@ void OpenGsmSerial()
     if (gsmSerial.readln_wait(100)=="OK") break;
     assert(i < 10);
   }
-  logger.println("Done!");
   logger.println();
 
 
@@ -167,10 +166,8 @@ void begin()
 }
 
 
-void update()
+void update(unsigned long timestamp, unsigned long delta)
 {
-  long long t_millis = millis();
-
   // send commands from serial to GSM port
   while (Serial.available()) {
     char ch = Serial.read();
@@ -183,27 +180,6 @@ void update()
     logger.println("Got something!");
   }
     
-
-  delay(100);
-  
-  /*
-  static int hello=0;
-  hello++;
-  int rts = (hello>>4)&1;
-  digitalWrite(PIN_GSM_RTS, rts); // 0 = active
-  
-  logger.print("RTS: ");
-  logger.println(rts);
-  delay(100);
-  */
-
-
-  const auto PIN_GSM_RTS = 2ul; // PA14 SERCOM2.2
-  const auto PIN_GSM_CTS = 5ul; // PA15 SERCOM2.3
-
-  
-  //logger.print("CTS: ");
-  //logger.println(digitalRead(PIN_GSM_CTS));
 
 
   // maintain connection every 10 seconds

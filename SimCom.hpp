@@ -6,7 +6,7 @@ namespace simcom
   void begin();
   bool isOn();
   void powerOnOff();
-  void update();
+  void update(unsigned long timestamp, unsigned long delta);
 }
 
 
