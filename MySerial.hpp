@@ -30,7 +30,7 @@ class MySerial : public HardwareSerial
     void begin(unsigned long baudrate, uint16_t config) {
       assert(0);
     }
-    
+  
     void begin(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom);
     void begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, _EPioType pinTypeRTS, _EPioType pinTypeCTS, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom);
     
@@ -64,8 +64,7 @@ class MySerial : public HardwareSerial
 
 public:
     // Functions for dealing with callbacks
-
-    bool (*callback)(const String& str) = nullptr;
+/*
 
     // wait for string, return 0 if timed out
     String readln_wait(int timeout=1000)
@@ -113,7 +112,7 @@ public:
         }
       }
     }
-
+*/
 };
 
 

@@ -1,7 +1,7 @@
 #include "SimCom.hpp"
 #include "Logger.hpp"
 #include "MySerial.hpp"
-#include "CommandManager.hpp"
+#include "GsmBoss.hpp"
 
 // APN setup
 #define APN "data.lyca-mobile.no"
@@ -18,6 +18,7 @@ namespace simcom
 {
   MySerial gsmSerial;
   MySerial gpsSerial;
+  GsmBoss  gsmBoss(gsmSerial);
 }
 
 void SERCOM2_Handler()
@@ -29,8 +30,6 @@ void SERCOM5_Handler()
 {
   simcom::gpsSerial.IrqHandler();
 }
-
-
 
 namespace simcom
 {
@@ -54,10 +53,10 @@ namespace simcom
     pinMode(PIN_PWRKEY, OUTPUT);
     digitalWrite(PIN_PWRKEY, LOW);
     delay(1000);
-    for (int i = 0; i <= 20; i++) {
+    for (int i = 0; i <= 100; i++) {
       delay(100);
       if (isOn() != startStatus) break;
-      assert(i < 20);
+      assert(i < 100);
     }
     digitalWrite(PIN_PWRKEY, HIGH);
     pinMode(PIN_PWRKEY, INPUT);
@@ -78,51 +77,28 @@ namespace simcom
   {
     logger.println("GSM: Opening serial");
     gsmSerial.begin_hs("gsm",  115200,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
-    gsmSerial.callback = GsmLineCallback;
     logger.println();
-  
+
     logger.println("GSM: Detecting baud");
+    gsmSerial.setTimeout(100);
     for (int i = 0; i <= 10; i++) {
       gsmSerial.println("AT");
-      if (gsmSerial.readln_wait(100)=="OK") break;
+      if (gsmSerial.find("OK\r")) break;
       assert(i < 10);
     }
-    logger.println();
-  
-  
-    String ret;
-  
-    logger.println("GSM: Disabling echo");
     gsmSerial.setTimeout(1000);
-    gsmSerial.println("ATE0");
-    assert(gsmSerial.readln_wait()=="OK");
     logger.println();
     
-    logger.println("GSM: Enabling flow control");
-    gsmSerial.println("AT+IFC=2,2");
-    assert(gsmSerial.readln_wait()=="OK");
+    gsmBoss.callback = GsmLineCallback;
   }
 
-  bool GpsLineCallback(const String& str);
   void OpenGpsSerial()
   {
     logger.println("GPS: Opening serial");
     gpsSerial.begin("gps", 115200, 31ul/*PB23 SERCOM5.3 RX<-GPS_TX */, 30ul/*PB22 SERCOM5.2 TX->GPS_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_3, UART_TX_PAD_2, &sercom5);
-    gpsSerial.callback = GpsLineCallback;
   }
-  
 
-  
-  // net state
-  enum NetState {
-    MS_DISCONNECTED,
-    MS_CONNECTED,
-    MS_CONNECT_IN_PROGRESS,
-    MS_REQUEST_IN_PROGRESS,
-  };
-  NetState net_state = MS_DISCONNECTED;
-
-
+    
   
   void begin()
   {
@@ -147,20 +123,22 @@ namespace simcom
   
     // GSM
     OpenGsmSerial();
-  
-  
+
+    // Config GSM
+    gsmBoss.first("ATE0").success([](const String& rsp) {
+      logger.println("Disabled echo");
+    });
+    gsmBoss.first("AT+IFC=2,2").success([](const String& rsp) {
+      logger.println("Enabled flow control");
+    });
+
     // GPS
     // OpenGpsSerial();
-  
+
     logger.println("SimCom!");
   }
 
 
-
-
-  // gsm-commands that will be run
-  // push to front for immediate action, to back for queuing up
-  CommandManager command_manager;
 
     
   const char* state_table[] = {
@@ -177,8 +155,39 @@ namespace simcom
   };
 
 
-  
+  class GsmConnection
+  {
+    long signal_strength = 0;
+    
+    unsigned long countdown = 6000; // first time
+    static const unsigned long period = 4000; // period time
+    bool connected = false;
+  public:
 
+    void manage_connection()
+    {
+      logger.println("Managing connection");
+      assert(countdown==0);
+      gsmBoss.first("AT+CSQ").response([this](const String& message, GsmBoss::ResolveFunc resolve, GsmBoss::FailFunc fail) {
+        int start_pos = 6;
+        int comma_pos = message.indexOf(',', start_pos);
+        this->signal_strength = message.substring(start_pos, comma_pos).toInt();
+        logger.println(String("Signal strength: ") + this->signal_strength);
+        if (this->signal_strength == 0) this->connected = false;
+      })
+        
+    void update(unsigned long timestamp, unsigned long delta)
+    {
+      if (countdown > delta) {
+        countdown -= delta;
+      } else if (countdown > 0) {
+        countdown = 0;
+        manage_connection();
+      }
+    }
+
+    
+  } gsmConnection;
 
   
   void update(unsigned long timestamp, unsigned long delta)
@@ -189,41 +198,19 @@ namespace simcom
       gsmSerial.write(ch);
     }
 
-    String str = gsmSerial.readln_imm();
-    if (str.length()) {
-      logger.println("Got something!");
-      command_manager.process_response(gsmSerial, str);
-    }
+    // keep connection up
+    gsmConnection.update(timestamp, delta);
 
-    static bool har_gjort = false;
-    if (timestamp > 10000 && !har_gjort) {
-      har_gjort = true;
-      command_manager.enqueue(gsmSerial, "AT+CSQ", [=](const String& rsp, CommandRunnerFn run) {
-        logger.print("Fikk ");
-        logger.print(rsp);
-        logger.println(" i min lambda");
-      });
-    }
-
-    command_manager.update(timestamp, delta);
+    // update gsm-boss
+    gsmBoss.update(timestamp, delta);
     
   }
   
-
-
-
-  bool GpsLineCallback(const String& str)
-  {
-
-    return false;
-  }
-
   
-
+  // handle spontaneous messages
   bool GsmLineCallback(const String& str)
   {
     static const char* gobbleList[] = {
-      "AT", // may be echoed during baud-detection
       "ATE0", // may be echoed while turning off echo
       "RDY", // may be printed during initialization
       "+CFUN: 1", // may be printed during initialization

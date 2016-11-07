@@ -6,20 +6,20 @@
 extern "C" char *sbrk(int i);
 
 namespace {
-
-
-float readBatteryVoltage()
-{
-  static const auto VBAT_PIN = A7;
-  static const float ref_volt = 3.0f;
-  return analogRead(VBAT_PIN) * (ref_volt * 2.f / 1024.f);
-}
-
-int freeRam ()
-{
-  char stack_dummy = 0;
-  return &stack_dummy - sbrk(0);
-}
+  
+  
+  float readBatteryVoltage()
+  {
+    static const auto VBAT_PIN = A7;
+    static const float ref_volt = 3.0f;
+    return analogRead(VBAT_PIN) * (ref_volt * 2.f / 1024.f);
+  }
+  
+  int freeRam ()
+  {
+    char stack_dummy = 0;
+    return &stack_dummy - sbrk(0);
+  }
 
 }
 
@@ -111,8 +111,8 @@ void loop() {
   // blink the mid-led
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-  delay(500);
+  delay(100);
   digitalWrite(PIN_LED, LOW);
-  delay(500);
-
+  delay(100);
+  
 }
