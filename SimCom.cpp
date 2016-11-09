@@ -59,12 +59,24 @@ namespace simcom {
       String cmd;
       unsigned long timeout;
       QueuedCommand(const String& cmd, unsigned long timeout) : cmd(cmd), timeout(timeout) {}
-      std::function<void()> ok_handler = nullptr;
+      std::function<void(const String& msg, std::function<void()> resolve, std::function<void()> fail)> msg_handler = nullptr;
+      std::function<void(bool)> done_handler = nullptr;
     };
     
     std::queue<QueuedCommand> command_queue;   
   
     std::unique_ptr<QueuedCommand> current_cmd;
+
+    void finish_cmd(bool error) {
+      if (current_cmd->done_handler)
+        current_cmd->done_handler(error);
+      if (error) {
+        logger.println(String("GSM: \"") + current_cmd->cmd + "\" failed");
+      } else {
+        logger.println(String("GSM: \"") + current_cmd->cmd + "\" succeeded");
+      }
+      current_cmd.reset();
+    }
     
   public:
     static const unsigned long default_timeout = 1000;
@@ -74,16 +86,19 @@ namespace simcom {
       // fetch message
       if (serial.hasString()) {
         String str = serial.popString();
-
-        if (current_cmd && str=="OK") {
-            current_cmd->ok_handler();
-            current_cmd.reset();
-        } else if (unsolicited_message_handler(str)) {
-          // good
+        if (unsolicited_message_handler(str)) {
+          // ok
+        } else if (current_cmd && str=="OK") {
+          finish_cmd(false);
+        } else if (current_cmd && str=="ERROR") {
+          finish_cmd(true);
+        } else if (current_cmd && current_cmd->msg_handler) {
+          current_cmd->msg_handler(str, [&](){ finish_cmd(false); }, [&](){ finish_cmd(true); });
+        } else if (current_cmd) {
+          logger.println(String("GSM: Unhandled message: \"") + str + "\" while running \"") + current_cmd->cmd + "\"";
+          assert(0);
         } else {
-          String err = String("GSM: Unhandled message: \"") + str + "\"";
-          if (current_cmd) err += String(" while running \"") + current_cmd->cmd + "\"";
-          logger.println(err);
+          logger.println(String("GSM: Unhandled message: \"") + str + "\"");
           assert(0);
         }
       }
@@ -106,19 +121,30 @@ namespace simcom {
         serial.println(current_cmd->cmd);
       }
     }
-    
-    // run simple command, which prints OK or ERROR (or other unexpected message)
-    void runOk(const String& cmd, unsigned long timeout, std::function<void()> ok_handler)
+
+
+    void run(const String& cmd, unsigned long timeout, std::function<void(bool)> done_handler=nullptr)
     {
       QueuedCommand tmp(cmd, timeout);
-      tmp.ok_handler = ok_handler;
+      tmp.done_handler = done_handler;
       command_queue.push(std::move(tmp));
     }
     
-    void runOk(const String& cmd, std::function<void()> ok_handler)
+    void run(const String& cmd, std::function<void(bool)> done_handler=nullptr)
     {
-      runOk(cmd, default_timeout, ok_handler);
+      run(cmd, default_timeout, done_handler);
     }  
+
+    void run(const String& cmd, unsigned long timeout, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
+      QueuedCommand tmp(cmd, timeout);
+      tmp.msg_handler = msg_handler;
+      tmp.done_handler = done_handler;
+      command_queue.push(std::move(tmp));
+    }
+
+    void run(const String& cmd, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
+      run(cmd, default_timeout, msg_handler, done_handler);
+    }
   };
 }
 
@@ -136,6 +162,38 @@ void SERCOM2_Handler()
 {
   simcom::gsm.serial.IrqHandler();
 }
+
+
+namespace simcom {
+  class GsmHttpClient {
+      
+    static const unsigned long reconnect_period = 10000;
+    String location_string;
+    bool connected = false;
+    unsigned long reconnect_timer=0;
+
+    void reconnect()
+    {
+       // get signal strength
+      
+    }
+    
+  public:
+
+
+
+    void update(unsigned long timestamp, unsigned long delta)
+    {
+      if (reconnect_timer > delta) {
+        reconnect_timer -= delta;
+      } else if (reconnect_timer>0) {
+        reconnect_timer = 0;
+        reconnect();
+      }
+    }
+  };
+}
+
 
 
 // on/off
@@ -184,7 +242,7 @@ namespace simcom {
   bool gsmUnsolicitedMessageHandler(const String& str)
   {
     static const char* gobbleList[] = {
-      "ATE0", // may be echoed while turning off echo
+      //"ATE0", // may be echoed while turning off echo
       //"RDY", // may be printed during initialization
       //"+CFUN: 1", // may be printed during initialization
       //"+CPIN: READY", // may be printed during initialization
@@ -288,14 +346,14 @@ namespace simcom {
   
     // GSM
     gsm.begin(gsmUnsolicitedMessageHandler);
-  
-    // Config GSM
-    gsm.runOk("ATE0", []() {
-      logger.println("Disabled echo");
+    
+    // Turn off echo
+    gsm.run("ATE0", [](const String& msg, std::function<void()> resolve, std::function<void()> fail) {
+      if (msg!="ATE0") fail(); // gobble echo
     });
-    gsm.runOk("AT+IFC=2,2", []() {
-      logger.println("Enabled flow control");
-    });
+
+    // Enable flow control
+    gsm.run("AT+IFC=2,2");
   
     // GPS
     // gps.begin();
