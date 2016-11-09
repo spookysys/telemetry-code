@@ -68,13 +68,13 @@ namespace simcom {
     std::unique_ptr<QueuedCommand> current_cmd;
 
     void finish_cmd(bool error) {
+      if (error) {
+        logger.println(String("FAILED: \"") + current_cmd->cmd + "\"");
+      } else {
+        //logger.println(String("SUCCEEDED: \"") + current_cmd->cmd + "\"");
+      }
       if (current_cmd->done_handler)
         current_cmd->done_handler(error);
-      if (error) {
-        logger.println(String("GSM: \"") + current_cmd->cmd + "\" failed");
-      } else {
-        logger.println(String("GSM: \"") + current_cmd->cmd + "\" succeeded");
-      }
       current_cmd.reset();
     }
     
@@ -95,10 +95,10 @@ namespace simcom {
         } else if (current_cmd && current_cmd->msg_handler) {
           current_cmd->msg_handler(str, [&](){ finish_cmd(false); }, [&](){ finish_cmd(true); });
         } else if (current_cmd) {
-          logger.println(String("GSM: Unhandled message: \"") + str + "\" while running \"") + current_cmd->cmd + "\"";
+          logger.println(String("UNHANDLED: \"") + str + "\" while running \"" + current_cmd->cmd + "\"");
           assert(0);
         } else {
-          logger.println(String("GSM: Unhandled message: \"") + str + "\"");
+          logger.println(String("UNHANDLED: \"") + str + "\"");
           assert(0);
         }
       }
@@ -108,7 +108,7 @@ namespace simcom {
         if (current_cmd->timeout > delta) {
           current_cmd->timeout -= delta;
         } else {
-          logger.println(String("Timeout while processing \"") + current_cmd->cmd + "\" - stopping.");
+          logger.println(String("TIMEOUT: \"") + current_cmd->cmd + "\" - stopping.");
           current_cmd.reset();
           assert(0);
         }
@@ -122,29 +122,46 @@ namespace simcom {
       }
     }
 
-
-    void run(const String& cmd, unsigned long timeout, std::function<void(bool)> done_handler=nullptr)
-    {
-      QueuedCommand tmp(cmd, timeout);
-      tmp.done_handler = done_handler;
-      command_queue.push(std::move(tmp));
-    }
-    
-    void run(const String& cmd, std::function<void(bool)> done_handler=nullptr)
-    {
-      run(cmd, default_timeout, done_handler);
-    }  
-
-    void run(const String& cmd, unsigned long timeout, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
+    // full blown version
+    void run_h2(const String& cmd, unsigned long timeout, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
       QueuedCommand tmp(cmd, timeout);
       tmp.msg_handler = msg_handler;
       tmp.done_handler = done_handler;
       command_queue.push(std::move(tmp));
     }
 
-    void run(const String& cmd, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
-      run(cmd, default_timeout, msg_handler, done_handler);
+    // full blown minus timeout
+    void run_h2(const String& cmd, std::function<void(const String&, std::function<void()> resolve, std::function<void()> fail)> msg_handler, std::function<void(bool)> done_handler=nullptr) {
+      run_h2(cmd, default_timeout, msg_handler, done_handler);
     }
+
+    // simple message handler
+    void run_h1(const String& cmd, unsigned long timeout, std::function<void(const String&)> simple_msg_handler, std::function<void(bool)> done_handler=nullptr) {
+      QueuedCommand tmp(cmd, timeout);
+      tmp.msg_handler = [simple_msg_handler](const String& msg, std::function<void()> resolve, std::function<void()> fail){ simple_msg_handler(msg); };
+      tmp.done_handler = done_handler;
+      command_queue.push(std::move(tmp));
+    }
+
+    // simple message handler minus timeout
+    void run_h1(const String& cmd, std::function<void(const String&)> simple_msg_handler, std::function<void(bool)> done_handler=nullptr) {
+      run_h1(cmd, default_timeout, simple_msg_handler, done_handler);
+    }  
+
+    // no message handler
+    void run(const String& cmd, unsigned long timeout, std::function<void(bool)> done_handler=nullptr)
+    {
+      QueuedCommand tmp(cmd, timeout);
+      tmp.msg_handler = nullptr;
+      tmp.done_handler = done_handler;
+      command_queue.push(std::move(tmp));
+    }
+
+    // no message handler minus timeout
+    void run(const String& cmd, std::function<void(bool)> done_handler=nullptr)
+    {
+      run(cmd, default_timeout, done_handler);
+    }  
   };
 }
 
@@ -166,36 +183,165 @@ void SERCOM2_Handler()
 
 namespace simcom {
   class GsmHttpClient {
-      
-    static const unsigned long reconnect_period = 10000;
-    String location_string;
-    bool connected = false;
-    unsigned long reconnect_timer=0;
+    static const unsigned long connection_maintenance_period  = 60000;
+    unsigned long connection_maintenance_timer = 0; // for re-starting maintenance
+    bool connection_maintenance_ongoing = false;
 
-    void reconnect()
+    bool network_status = false;
+    bool bearer_status = false;
+    bool http_status = false;
+
+    
+    String location_string;
+
+    // x AT+CSQ
+    // x AT+SAPBR=3,1,"Contype","GPRS";+SAPBR=3,1,"APN","data.lyca-mobile.no"
+    // x AT+SAPBR=1,1
+    // x AT+SAPBR=2,1
+    // x AT+CIPGSMLOC=1,1 
+
+
+    // check for network signal
+    void connection_maintenance_start()
     {
-       // get signal strength
-      
+      assert(!connection_maintenance_ongoing);
+      connection_maintenance_ongoing = true;
+    
+      // check signal strength
+      gsm.run_h1("AT+CSQ", [this](const String& msg){
+        int lastIndex = msg.lastIndexOf(",");
+        int tmp = msg.substring(6, lastIndex).toInt();
+        if (msg.startsWith("+CSQ: ") && tmp>=0) {
+          logger.println(String("Signal: ") + tmp);
+          if (tmp<=1)
+            updateNetworkStatus(false);
+        } else assert(0);
+      }, [this](bool err) {
+        if (!err && network_status) connection_maintenance_1();
+        else connection_maintenance_done();
+      });
+    }
+
+    // check if bearer profile is active
+    void connection_maintenance_1() {
+      gsm.run_h1("AT+SAPBR=2,1", [this](const String& msg) {
+        bool start_ok = msg.startsWith("+SAPBR: ");
+        int start_index = 8;
+        int index1 = msg.indexOf(",", start_index);
+        int index2 = msg.indexOf(",", index1+1);
+        int cid = msg.substring(start_index, index1).toInt();
+        int status = msg.substring(index1+1, index2).toInt();
+        String ip = msg.substring(index2+2, msg.length()-1);
+        assert(cid>=0 && status >= 0 && ip.length()>0);
+        updateBearerStatus(status==1);
+      }, [this](bool err) {
+        if (!err) connection_maintenance_2();
+        else connection_maintenance_done();
+      });
+    }
+
+    // configure bearer
+    void connection_maintenance_2()
+    {
+      // skip if already configured 
+      if (this->bearer_status) {
+        connection_maintenance_3();
+        return;
+      }
+      // do it
+      gsm.run("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 10000, [this](bool err){
+        if (!err) {
+          updateBearerStatus(true);
+          connection_maintenance_3();
+        } else connection_maintenance_done();
+      });
+    }
+
+    // query location and time
+    void connection_maintenance_3() {
+      // skip if already retrieved
+      if (location_string.length()>0) {
+        connection_maintenance_4();
+        return;
+      }
+      // do it
+      gsm.run_h1("AT+CIPGSMLOC=1,1", 10000, [this](const String& msg) {
+        logger.println("got location");
+        this->location_string = msg;
+      }, [this](bool err) {
+        if (!err) connection_maintenance_4();
+        else connection_maintenance_done();
+      });
+    }
+
+    void connection_maintenance_4() {
+      connection_maintenance_done();
     }
     
+    void connection_maintenance_done() {
+      logger.println("connection_maintenance_done");
+      if (network_status) {
+        logger.println(String("Setting maintenance timer to ") + connection_maintenance_period);
+        connection_maintenance_timer = connection_maintenance_period;
+      } else {
+        logger.println("Not setting maintenance timer, as network is disconnected");
+      }
+      connection_maintenance_ongoing = false;
+    }
   public:
 
+    void updateHttpStatus(bool op) {
+      if (!op) {
+        if (this->http_status) logger.println("HTTP disconnected");
+        this->http_status = false;
+      } else {
+        if (!this->http_status) logger.println("HTTP connected");
+        this->http_status = true;
+      }
+    }
 
+    void updateBearerStatus(bool op) {
+      if (!op) {
+        if (this->bearer_status) logger.println("Bearer disconnected");
+        this->bearer_status = false;
+        updateHttpStatus(false);
+      } else {
+        if (!this->bearer_status) logger.println("Bearer connected");
+        this->bearer_status = true;
+      }
+    }
+  
+    void updateNetworkStatus(bool op) {
+      if (!op) {
+        if (this->network_status) logger.println("Network disconnected!");
+        this->network_status = false;
+        updateBearerStatus(false);
+        connection_maintenance_timer = 0;
+      } else {
+        if (!this->network_status) logger.println("Network connected!");
+        this->network_status = true;
+        if (!connection_maintenance_ongoing)
+          connection_maintenance_start();
+      }
+    }
 
     void update(unsigned long timestamp, unsigned long delta)
     {
-      if (reconnect_timer > delta) {
-        reconnect_timer -= delta;
-      } else if (reconnect_timer>0) {
-        reconnect_timer = 0;
-        reconnect();
+      if (connection_maintenance_timer > delta) {
+        connection_maintenance_timer -= delta;
+      } else if (connection_maintenance_timer>0) {
+        connection_maintenance_timer = 0;
+        connection_maintenance_start();
       }
     }
   };
+
 }
 
-
-
+namespace simcom {
+  GsmHttpClient gsm_http;
+}
+  
 // on/off
 namespace simcom
 {
@@ -304,19 +450,24 @@ namespace simcom {
       "REMOTE IP:",
       "+CDNSGIP:",
       "+PDP: DEACT",
-      "+SAPBR",
+      //"+SAPBR",
       "+HTTPACTION:",
       "+FTP",
-      "+CGREG:",
+      //"+CGREG:",
       "ALARM RING",
       "+CALV:"
     };
+
+    if (str.startsWith("+CGREG: ")) {
+      int status = str.substring(8, 9).toInt();
+      assert(status>=0);
+      gsm_http.updateNetworkStatus(status==1 || status==5);
+      return true;
+    }
     
     for (int i=0; i<sizeof(gobbleList)/sizeof(*gobbleList); i++) {
       if (str.startsWith(gobbleList[i])) {
-        logger.print("\"");
-        logger.print(str);
-        logger.println("\" - gobbled by callback");
+        //logger.print(String("\"") + str + "\" - gobbled by callback");
         return true;
       }
     }
@@ -347,14 +498,16 @@ namespace simcom {
     // GSM
     gsm.begin(gsmUnsolicitedMessageHandler);
     
-    // Turn off echo
-    gsm.run("ATE0", [](const String& msg, std::function<void()> resolve, std::function<void()> fail) {
-      if (msg!="ATE0") fail(); // gobble echo
+    // Turn off echo and enable flow control
+    gsm.run_h1("ATE0+IFC=2,2", [](const String& msg) {
+      assert(msg.startsWith("ATE0")); // gobble echo
     });
 
-    // Enable flow control
-    gsm.run("AT+IFC=2,2");
-  
+
+    // Enable unsolicited reporting of connection status
+    gsm.run("AT+CGREG=1");
+
+    
     // GPS
     // gps.begin();
   
@@ -364,6 +517,11 @@ namespace simcom {
   void update(unsigned long timestamp, unsigned long delta)
   {
     gsm.update(timestamp, delta);
+    gsm_http.update(timestamp, delta);
+
+    while (Serial.available()) {
+      gsm.serial.write(Serial.read());
+    }
   }
 }  
 
