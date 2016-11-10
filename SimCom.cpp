@@ -182,7 +182,7 @@ void SERCOM2_Handler()
 
 
 namespace simcom {
-  class GsmHttpClient {
+  class GsmClient {
     static const unsigned long connection_maintenance_period  = 60000;
     unsigned long connection_maintenance_timer = 0; // for re-starting maintenance
     bool connection_maintenance_ongoing = false;
@@ -207,35 +207,27 @@ namespace simcom {
       assert(!connection_maintenance_ongoing);
       connection_maintenance_ongoing = true;
     
-      // check signal strength
-      gsm.run_h1("AT+CSQ", [this](const String& msg){
-        int lastIndex = msg.lastIndexOf(",");
-        int tmp = msg.substring(6, lastIndex).toInt();
-        if (msg.startsWith("+CSQ: ") && tmp>=0) {
+      // check signal strength and whether bearer profile is active
+      gsm.run_h1("AT+CSQ;+SAPBR=2,1", [this](const String& msg){
+        if (msg.startsWith("+CSQ: ")) {
+          int lastIndex = msg.lastIndexOf(",");
+          int tmp = msg.substring(6, lastIndex).toInt();
+          assert(tmp>=0);
           logger.println(String("Signal: ") + tmp);
-          if (tmp<=1)
-            updateNetworkStatus(false);
-        } else assert(0);
+          if (tmp<=1) updateNetworkStatus(false);
+        } else if (msg.startsWith("+SAPBR: ")) {
+          int index1 = msg.indexOf(",");
+          int index2 = msg.indexOf(",", index1+1);
+          int cid = msg.substring(8, index1).toInt();
+          int status = msg.substring(index1+1, index2).toInt();
+          String ip = msg.substring(index2+2, msg.length()-1);
+          assert(cid>=0 && status>=0 && ip.length()>0);
+          updateBearerStatus(status==1);          
+        } else {
+          assert(!"Unknown message");
+        }
       }, [this](bool err) {
-        if (!err && network_status) connection_maintenance_1();
-        else connection_maintenance_done();
-      });
-    }
-
-    // check if bearer profile is active
-    void connection_maintenance_1() {
-      gsm.run_h1("AT+SAPBR=2,1", [this](const String& msg) {
-        bool start_ok = msg.startsWith("+SAPBR: ");
-        int start_index = 8;
-        int index1 = msg.indexOf(",", start_index);
-        int index2 = msg.indexOf(",", index1+1);
-        int cid = msg.substring(start_index, index1).toInt();
-        int status = msg.substring(index1+1, index2).toInt();
-        String ip = msg.substring(index2+2, msg.length()-1);
-        assert(cid>=0 && status >= 0 && ip.length()>0);
-        updateBearerStatus(status==1);
-      }, [this](bool err) {
-        if (!err) connection_maintenance_2();
+        if (!err && network_status) connection_maintenance_2();
         else connection_maintenance_done();
       });
     }
@@ -339,7 +331,7 @@ namespace simcom {
 }
 
 namespace simcom {
-  GsmHttpClient gsm_http;
+  GsmClient gsm_client;
 }
   
 // on/off
@@ -461,7 +453,7 @@ namespace simcom {
     if (str.startsWith("+CGREG: ")) {
       int status = str.substring(8, 9).toInt();
       assert(status>=0);
-      gsm_http.updateNetworkStatus(status==1 || status==5);
+      gsm_client.updateNetworkStatus(status==1 || status==5);
       return true;
     }
     
@@ -517,7 +509,7 @@ namespace simcom {
   void update(unsigned long timestamp, unsigned long delta)
   {
     gsm.update(timestamp, delta);
-    gsm_http.update(timestamp, delta);
+    gsm_client.update(timestamp, delta);
 
     while (Serial.available()) {
       gsm.serial.write(Serial.read());
