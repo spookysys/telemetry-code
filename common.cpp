@@ -1,17 +1,15 @@
 #include "common.hpp"
-#include "Logger.hpp"
+#include "logging.hpp"
+
+namespace {
+  Logger& logger = logging::get("common");
+}
 
 void assert_handler(const char* expr, const char* file, int line)
 {
   //noInterrupts();
   
-  logger.print("Assertion failed: ");
-  logger.println(expr);
-  logger.print(" in ");
-  logger.print(file);
-  logger.print(":");
-  logger.print(line);
-  logger.println();
+  logger.println(String("Assertion failed: ") + expr + " in " + file + ":" + String(line));
   logger.println();
   logger.flush();
  

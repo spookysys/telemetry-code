@@ -1,11 +1,12 @@
 // NOTE: leftover code from arduino zero is hogging sercom5, which we need. Comment this out from variants.cpp to fix.
 #include "common.hpp"
-#include "Logger.hpp"
-#include "SimCom.hpp"
+#include "logging.hpp"
+#include "simcom.hpp"
 
 extern "C" char *sbrk(int i);
 
 namespace {
+  Logger& logger = logging::get("main");
   
   
   float readBatteryVoltage()
@@ -29,13 +30,7 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
 
-  // try bring up serial for 4 sec
-  Serial.begin(74880);
-  for (int i = 0; i < 40; i++) {
-    if (Serial) break;
-    delay(100);
-  }
-  logger.begin(Serial ? &Serial : nullptr);
+  logging::begin();
   logger.println("Hey there!");
   simcom::begin();
 

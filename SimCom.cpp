@@ -1,14 +1,196 @@
-#include "SimCom.hpp"
-#include "Logger.hpp"
-#include "MySerial.hpp"
+#include "simcom.hpp"
+#include "logging.hpp"
+#include "gsm.hpp"
+#include "gps.hpp"
+
+namespace simcom
+{
+  Logger& logger = logging::get("simcom");
+  
+  const auto PIN_GPS_EN = 26ul;
+  const auto PIN_STATUS = 25ul;
+  const auto PIN_PWRKEY = 38ul;
+  
+  bool isOn()
+  {
+    return digitalRead(PIN_STATUS);
+  }
+  
+  void powerOnOff() {
+    int startStatus = isOn();
+    if (startStatus) {
+      logger.println("SimCom is on - turning off");
+    } else {
+      logger.println("SimCom is off - turning on");
+    }
+    pinMode(PIN_PWRKEY, OUTPUT);
+    digitalWrite(PIN_PWRKEY, LOW);
+    delay(1000);
+    for (int i = 0; i <= 100; i++) {
+      delay(100);
+      if (isOn() != startStatus) break;
+      assert(i < 100);
+    }
+    digitalWrite(PIN_PWRKEY, HIGH);
+    pinMode(PIN_PWRKEY, INPUT);
+    //delay(100);
+    int stopStatus = isOn();
+    if (stopStatus) {
+      logger.println("SimCom is now on");
+    } else {
+      logger.println("SimCom is now off");
+    }
+    assert(startStatus != stopStatus);
+  }
+  
+  void gpsPrimingCallback(const String& lon, const String& lat, const String& date, const String& time_utc)
+  {
+    logger.println(lon);
+    logger.println(lat);
+    logger.println(date);
+    logger.println(time_utc);
+  }
+
+  // for now, gobble all unsolicited messages
+  bool gsmUnsolicitedMessageHandler(const String& str)
+  {
+    static const char* gobbleList[] = {
+      //"ATE0", // may be echoed while turning off echo
+      //"RDY", // may be printed during initialization
+      //"+CFUN: 1", // may be printed during initialization
+      //"+CPIN: READY", // may be printed during initialization
+      //"Call Ready", // may be printed during initialization
+      //"SMS Ready", // may be printed during initialization
+
+      "+CCWA:",
+      "+CLIP:",
+      "+CRING:",
+      "+CREG:",
+      "+CCWV:",
+      "+CMTI:", // message
+      "+CMT:", // message
+      "+CBM:", // broadcast message
+      "+CDS:", // sms status report
+      "+COLP:",
+      "+CSSU:",
+      "+CSSI:",
+      "+CLCC:",
+      "*PSNWID:",
+      "*PSUTTZ:",
+      "+CTZV:",
+      "DST:",
+      "+CSMINS:",
+      "+CDRIND:",
+      "+CHF:",
+      "+CENG:",
+      "MO RING",
+      "MO CONNECTED",
+      "+CPIN:", // Indicates whether some password is required
+      "+CSQN:",
+      "+SIMTONE:",
+      "+STTONE:",
+      "+CR:",
+      "+CUSD:",
+      "RING",
+      "NORMAL POWER DOWN",
+      "+CMTE:",
+      "UNDER-VOLTAGE POWER DOWN",
+      "UNDER-VOLTAGE WARNING",
+      "UNDER-VOLTAGE WARNNING",
+      "OVER-VOLTAGE POWER DOWN",
+      "OVER-VOLTAGE WARNING",
+      "OVER-VOLTAGE WARNNING",
+      "CHARGE-ONLY MODE",
+      "RDY",
+      "Call Ready",
+      "SMS Ready",
+      "+CFUN:",
+      //[<n>,]CONNECT OK
+      "CONNECT",
+      //[<n>,]CONNECT FAIL
+      //[<n>,]ALREADY CONNECT
+      //[<n>,]SEND OK 
+      //[<n>,]CLOSED
+      "RECV FROM:",
+      "+IPD,",
+      "+RECEIVE,",
+      "REMOTE IP:",
+      "+CDNSGIP:",
+      "+PDP: DEACT",
+      //"+SAPBR",
+      "+HTTPACTION:",
+      "+FTP",
+      //"+CGREG:",
+      "ALARM RING",
+      "+CALV:"
+    };
+
+    if (str.startsWith("+CGREG: ")) {
+      int status = str.substring(8, 9).toInt();
+      assert(status>=0);
+      //gsm_client.updateNetworkStatus(status==1 || status==5);
+      bool status_bool = status==1 || status==5;
+      logger.println(String("GPRS status: ") + status_bool);
+      return true;
+    }
+    
+    for (int i=0; i<sizeof(gobbleList)/sizeof(*gobbleList); i++) {
+      if (str.startsWith(gobbleList[i])) {
+        //logger.print(String("\"") + str + "\" - gobbled by callback");
+        return true;
+      }
+    }
+    return false;
+  } 
+
+  
+  void begin() 
+  {
+    pinMode(PIN_GPS_EN, INPUT); // high-z
+    pinMode(PIN_STATUS, INPUT_PULLDOWN);
+    pinMode(PIN_PWRKEY, INPUT_PULLDOWN);
+  
+    // If module already on, reset it
+    if (isOn()) {
+      powerOnOff();
+      assert(!isOn());
+      delay(800);
+      assert(!isOn());
+    }
+  
+    // Turn module on
+    assert(!isOn());
+    powerOnOff();
+    assert(isOn());
+  
+    // GSM
+    gsm::begin(gsmUnsolicitedMessageHandler);
+
+
+    // Turn off echo and enable flow control
+    //gsm::run_h1("ATE0+IFC=2,2", [](const String& msg) {
+//      assert(msg.startsWith("ATE0")); // gobble echo
+    //});
+
+    // Enable unsolicited reporting of connection status
+    //gsm::run("AT+CGREG=1");
+
+    // GPS
+    gps::begin();
+  }
+  void update(unsigned long timestamp, unsigned long delta)
+  {
+    gps::update(timestamp, delta);
+    gsm::update(timestamp, delta);
+  }
+}
+
+
+#if 0
+
 #include <functional>
 #include <queue>
 #include <memory>
-
-// APN setup
-#define APN "data.lyca-mobile.no"
-#define APN_USER "lmno"
-#define APN_PW "plus"
 
 // OpenWeatherMap key
 #define OWM_APIKEY "18143027801bd9493887c2020cb2968e"
@@ -18,50 +200,7 @@ namespace simcom {
   public:
     MySerial serial;
     GpsComm() {}
-    void begin()
-    {
-      logger.println("GPS: Opening serial");
-      serial.begin("gps", 115200, 31ul/*PB23 SERCOM5.3 RX<-GPS_TX */, 30ul/*PB22 SERCOM5.2 TX->GPS_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_3, UART_TX_PAD_2, &sercom5);
-    }
     
-    void update(unsigned long timestamp, unsigned long delta)
-    {
-      while (serial.hasString()) {
-        String str = serial.popString();
-        if (str[0]!='$') {
-          logger.println(str);
-          logger.println("Not understood");
-          continue;
-        }
-        if (str[1]!='G') {
-          logger.println(str);
-          logger.println("Unknown talker");
-          continue;
-        }
-        int idx_l = 3;
-        int idx_r = str.indexOf(',', idx_l);
-        String sss = str.substring(idx_l, idx_r);
-        //logger.println(sss);
-        if (sss=="GGA") {
-          // Global Positioning System Fix Data. Time, Position and fix related data for a GPS receive
-        } else if (sss=="RMC") {
-          // Time, date, position, course and speed data
-        } else if (sss=="GLL") {
-          // Geographic Position - Latitude/Longitude
-          // Position was calculated based on one or more of the SVs having their states derived from almanac parameters, as opposed to ephemerides.
-        } else if (sss=="VTG") {
-          // Course and speed information relative to the ground
-        } else if (sss=="ACCURACY") {
-          // ...
-        } else if (sss=="GSA") { // GPS DOP and active satellite
-        } else if (sss=="GSV") { // Satellites in view
-        } else if (sss=="ZDA") { // Time & Date – UTC, Day, Month, Year and Local Time Zone
-        } else {
-          logger.println(str);
-          logger.println("Unknown sentence identifier");
-        }
-      }
-    }
 
     void run(String cmd)
     {
@@ -209,20 +348,7 @@ namespace simcom {
   };
 }
 
-namespace simcom {
-  GpsComm gps;
-  GsmComm gsm;
-}
 
-void SERCOM5_Handler()
-{
-  simcom::gps.serial.IrqHandler();
-}
-
-void SERCOM2_Handler()
-{
-  simcom::gsm.serial.IrqHandler();
-}
 
 
 namespace simcom {
@@ -569,7 +695,7 @@ namespace simcom {
 }  
 
 
-    
+#endif    
 
 
 

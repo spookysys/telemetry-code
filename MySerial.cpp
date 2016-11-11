@@ -1,12 +1,12 @@
 #include "MySerial.hpp"
-#include "Logger.hpp"
+#include "logging.hpp"
 #include "wiring_private.h" // pinPeripheral() function
 
+MySerial::MySerial(const char* id) : logger(logging::get(id)) {}
 
 
-void MySerial::begin(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
+void MySerial::begin(unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
 {
-  this->name = name;
   this->sercom = sercom;
   pinPeripheral(pinRX, pinTypeRX);
   pinPeripheral(pinTX, pinTypeTX);
@@ -16,11 +16,11 @@ void MySerial::begin(const char* name, unsigned long baudrate, uint8_t pinRX, ui
   sercom->enableUART();
 }
 
-void MySerial::begin_hs(const char* name, unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, _EPioType pinTypeRTS, _EPioType pinTypeCTS, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
+void MySerial::begin_hs(unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, uint8_t pinRTS, uint8_t pinCTS, _EPioType pinTypeRX, _EPioType pinTypeTX, _EPioType pinTypeRTS, _EPioType pinTypeCTS, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
 {
   pinPeripheral(pinRTS, pinTypeRTS);
   pinPeripheral(pinCTS, pinTypeCTS);
-  this->begin(name, baudrate, pinRX, pinTX, pinTypeRX, pinTypeTX, padRX, padTX, sercom);
+  this->begin(baudrate, pinRX, pinTX, pinTypeRX, pinTypeTX, padRX, padTX, sercom);
   this->handshakeEnabled = true;
   this->pinRTS = pinRTS;
   this->pinCTS = pinCTS;
@@ -69,9 +69,9 @@ void MySerial::IrqHandler()
   
   if (sercom->availableDataUART()) {
     auto tmp = sercom->readDataUART();
-    if (name!="gps") logger.write(tmp);
+    //if (logger.id!="gps-ser") logger.write(tmp);
     if (rxBuffer.is_full()) {
-      logger.print("_rxOF_");
+      //logger.print("_rxOF_");
     } else {
       rxBuffer.push(tmp);
       updateRts();
@@ -80,7 +80,7 @@ void MySerial::IrqHandler()
   
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
-    logger.print("_rxER_");
+    //logger.print("_rxER_");
     // TODO: if (sercom->isBufferOverflowErrorUART()) ....
     // TODO: if (sercom->isFrameErrorUART()) ....
     // TODO: if (sercom->isParityErrorUART()) ....
