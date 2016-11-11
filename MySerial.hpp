@@ -15,6 +15,7 @@ class MySerial : public HardwareSerial
 
     // rxBuffer
     MyRingBuffer<1024> rxBuffer;
+    static const int rts_rx_margin = 10;
 
     // handshaking
     bool handshakeEnabled = false;

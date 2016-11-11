@@ -23,6 +23,50 @@ namespace simcom {
       logger.println("GPS: Opening serial");
       serial.begin("gps", 115200, 31ul/*PB23 SERCOM5.3 RX<-GPS_TX */, 30ul/*PB22 SERCOM5.2 TX->GPS_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_3, UART_TX_PAD_2, &sercom5);
     }
+    
+    void update(unsigned long timestamp, unsigned long delta)
+    {
+      while (serial.hasString()) {
+        String str = serial.popString();
+        if (str[0]!='$') {
+          logger.println(str);
+          logger.println("Not understood");
+          continue;
+        }
+        if (str[1]!='G') {
+          logger.println(str);
+          logger.println("Unknown talker");
+          continue;
+        }
+        int idx_l = 3;
+        int idx_r = str.indexOf(',', idx_l);
+        String sss = str.substring(idx_l, idx_r);
+        //logger.println(sss);
+        if (sss=="GGA") {
+          // Global Positioning System Fix Data. Time, Position and fix related data for a GPS receive
+        } else if (sss=="RMC") {
+          // Time, date, position, course and speed data
+        } else if (sss=="GLL") {
+          // Geographic Position - Latitude/Longitude
+          // Position was calculated based on one or more of the SVs having their states derived from almanac parameters, as opposed to ephemerides.
+        } else if (sss=="VTG") {
+          // Course and speed information relative to the ground
+        } else if (sss=="ACCURACY") {
+          // ...
+        } else if (sss=="GSA") { // GPS DOP and active satellite
+        } else if (sss=="GSV") { // Satellites in view
+        } else if (sss=="ZDA") { // Time & Date – UTC, Day, Month, Year and Local Time Zone
+        } else {
+          logger.println(str);
+          logger.println("Unknown sentence identifier");
+        }
+      }
+    }
+
+    void run(String cmd)
+    {
+      
+    }
   };
 }
 
@@ -84,7 +128,7 @@ namespace simcom {
     void update(unsigned long timestamp, unsigned long delta)
     {
       // fetch message
-      if (serial.hasString()) {
+      while (serial.hasString()) {
         String str = serial.popString();
         if (unsolicited_message_handler(str)) {
           // ok
@@ -183,45 +227,45 @@ void SERCOM2_Handler()
 
 namespace simcom {
   class GsmClient {
+    std::function<void(const String& lon, const String& lat, const String& date, const String& time_utc)> gps_priming_callback;
+
     static const unsigned long connection_maintenance_period  = 60000;
     unsigned long connection_maintenance_timer = 0; // for re-starting maintenance
     bool connection_maintenance_ongoing = false;
 
     bool network_status = false;
     bool bearer_status = false;
-    bool http_status = false;
-
-    
-    String location_string;
-
-    // x AT+CSQ
-    // x AT+SAPBR=3,1,"Contype","GPRS";+SAPBR=3,1,"APN","data.lyca-mobile.no"
-    // x AT+SAPBR=1,1
-    // x AT+SAPBR=2,1
-    // x AT+CIPGSMLOC=1,1 
-
+    bool gps_priming_done = false;
 
     // check for network signal
     void connection_maintenance_start()
     {
       assert(!connection_maintenance_ongoing);
       connection_maintenance_ongoing = true;
-    
-      // check signal strength and whether bearer profile is active
+
+      connection_maintenance_1();
+    }
+
+    // check signal strength and whether bearer profile is active
+    // and whether IP stack is active
+    void connection_maintenance_1() 
+    {
       gsm.run_h1("AT+CSQ;+SAPBR=2,1", [this](const String& msg){
         if (msg.startsWith("+CSQ: ")) {
-          int lastIndex = msg.lastIndexOf(",");
+          int lastIndex = msg.lastIndexOf(',');
           int tmp = msg.substring(6, lastIndex).toInt();
           assert(tmp>=0);
           logger.println(String("Signal: ") + tmp);
           if (tmp<=1) updateNetworkStatus(false);
         } else if (msg.startsWith("+SAPBR: ")) {
-          int index1 = msg.indexOf(",");
-          int index2 = msg.indexOf(",", index1+1);
-          int cid = msg.substring(8, index1).toInt();
-          int status = msg.substring(index1+1, index2).toInt();
-          String ip = msg.substring(index2+2, msg.length()-1);
+          int index0 = msg.indexOf(',');
+          int index1 = msg.indexOf(',', index0+1);
+          int cid = msg.substring(8, index0).toInt();
+          int status = msg.substring(index0+1, index1).toInt();
+          String ip = msg.substring(index1+2, msg.length()-1);
           assert(cid>=0 && status>=0 && ip.length()>0);
+          bool ret = (status==1);
+          logger.println(String("Current bearer status: ") + ret);
           updateBearerStatus(status==1);          
         } else {
           assert(!"Unknown message");
@@ -249,17 +293,21 @@ namespace simcom {
       });
     }
 
-    // query location and time
+    // query location and time to prime GPS
     void connection_maintenance_3() {
-      // skip if already retrieved
-      if (location_string.length()>0) {
+      // skip if already done
+      if (gps_priming_done) {
         connection_maintenance_4();
         return;
       }
       // do it
       gsm.run_h1("AT+CIPGSMLOC=1,1", 10000, [this](const String& msg) {
-        logger.println("got location");
-        this->location_string = msg;
+        int index0 = msg.indexOf(',');
+        int index1 = msg.indexOf(',', index0+1);
+        int index2 = msg.indexOf(',', index1+1);
+        int index3 = msg.indexOf(',', index2+1);
+        this->gps_priming_callback(msg.substring(index0+1, index1), msg.substring(index1+1, index2), msg.substring(index2+1, index3), msg.substring(index3+1));
+        this->gps_priming_done = true;
       }, [this](bool err) {
         if (!err) connection_maintenance_4();
         else connection_maintenance_done();
@@ -269,7 +317,7 @@ namespace simcom {
     void connection_maintenance_4() {
       connection_maintenance_done();
     }
-    
+
     void connection_maintenance_done() {
       logger.println("connection_maintenance_done");
       if (network_status) {
@@ -282,23 +330,12 @@ namespace simcom {
     }
   public:
 
-    void updateHttpStatus(bool op) {
-      if (!op) {
-        if (this->http_status) logger.println("HTTP disconnected");
-        this->http_status = false;
-      } else {
-        if (!this->http_status) logger.println("HTTP connected");
-        this->http_status = true;
-      }
-    }
-
     void updateBearerStatus(bool op) {
       if (!op) {
-        if (this->bearer_status) logger.println("Bearer disconnected");
+        if (this->bearer_status) logger.println("Bearer disconnected!");
         this->bearer_status = false;
-        updateHttpStatus(false);
       } else {
-        if (!this->bearer_status) logger.println("Bearer connected");
+        if (!this->bearer_status) logger.println("Bearer connected!");
         this->bearer_status = true;
       }
     }
@@ -317,6 +354,10 @@ namespace simcom {
       }
     }
 
+    void begin(decltype(GsmClient::gps_priming_callback) gps_priming_callback) {
+      this->gps_priming_callback = gps_priming_callback;
+    }
+      
     void update(unsigned long timestamp, unsigned long delta)
     {
       if (connection_maintenance_timer > delta) {
@@ -375,6 +416,14 @@ namespace simcom
 }
 
 namespace simcom {
+
+  void gpsPrimingCallback(const String& lon, const String& lat, const String& date, const String& time_utc)
+  {
+    logger.println(lon);
+    logger.println(lat);
+    logger.println(date);
+    logger.println(time_utc);
+  }
 
   // for now, gobble all unsolicited messages
   bool gsmUnsolicitedMessageHandler(const String& str)
@@ -486,31 +535,33 @@ namespace simcom {
     powerOnOff();
     assert(isOn());
   
-  
     // GSM
     gsm.begin(gsmUnsolicitedMessageHandler);
-    
+
+
     // Turn off echo and enable flow control
     gsm.run_h1("ATE0+IFC=2,2", [](const String& msg) {
       assert(msg.startsWith("ATE0")); // gobble echo
     });
 
-
     // Enable unsolicited reporting of connection status
     gsm.run("AT+CGREG=1");
 
-    
     // GPS
-    // gps.begin();
+    gps.begin();
+
+    // gsm-client
+    gsm_client.begin(gpsPrimingCallback);
   
     logger.println("SimCom!");
   }
 
   void update(unsigned long timestamp, unsigned long delta)
   {
+    gps.update(timestamp, delta);
     gsm.update(timestamp, delta);
     gsm_client.update(timestamp, delta);
-
+    
     while (Serial.available()) {
       gsm.serial.write(Serial.read());
     }

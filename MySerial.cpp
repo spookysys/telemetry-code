@@ -36,12 +36,12 @@ void MySerial::updateRts()
   if (!handshakeEnabled) return;
   
   bool changed = false;
-  if (curRts==false && rxBuffer.available() >= rxBuffer.capacity()*2/3) 
+  if (curRts==false && rxBuffer.available() >= rxBuffer.capacity()-rts_rx_margin) 
   {
     curRts = true;
     changed = true;
   } 
-  else if (curRts==true && rxBuffer.available() <= rxBuffer.capacity()*1/3)
+  else if (curRts==true && rxBuffer.available() <= rxBuffer.capacity()-rts_rx_margin*2)
   { 
     curRts = false;
     changed = true;
@@ -69,9 +69,9 @@ void MySerial::IrqHandler()
   
   if (sercom->availableDataUART()) {
     auto tmp = sercom->readDataUART();
-    logger.write(tmp);
+    if (name!="gps") logger.write(tmp);
     if (rxBuffer.is_full()) {
-      assert(!"RX Buffer full!");
+      logger.print("_rxOF_");
     } else {
       rxBuffer.push(tmp);
       updateRts();
@@ -80,8 +80,7 @@ void MySerial::IrqHandler()
   
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
-    logger.print(name);
-    logger.println(" Error");
+    logger.print("_rxER_");
     // TODO: if (sercom->isBufferOverflowErrorUART()) ....
     // TODO: if (sercom->isFrameErrorUART()) ....
     // TODO: if (sercom->isParityErrorUART()) ....
