@@ -17,7 +17,7 @@ class MySerial : public HardwareSerial
   SERCOM* sercom = nullptr;
 
   // rx_buffer
-  MyRingBuffer<256> rx_buffer;
+  MyRingBuffer<512> rx_buffer;
   const int rts_rx_stop = rx_buffer.capacity() - 10;
   const int rts_rx_cont = rx_buffer.capacity() - 20;
 

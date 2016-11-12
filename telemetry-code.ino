@@ -100,8 +100,8 @@ void loop() {
   // blink the mid-led
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-  delay(2000);
+  delay(250);
   digitalWrite(PIN_LED, LOW);
-  delay(2000);
+  delay(250);
   
 }

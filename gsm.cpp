@@ -24,6 +24,8 @@ namespace gsm {
   
   bool unsolicitedMessageHandler(const String& op);
 
+
+    
   void begin()
   {
     logger.println("Opening serial");
@@ -40,7 +42,7 @@ namespace gsm {
     logger.println();
 
     // Turn on flow control, disable echo, enable network status messages
-    logger.println("Essential config");
+    logger.println("Setup");
     serial.setTimeout(100);
     for (int i = 0; i <= 20; i++) {
       serial.println("AT+IFC=2,2;E0;+CGREG=1");
@@ -82,7 +84,21 @@ namespace gsm {
 
   void finish_task(bool err) {
     assert(current_task);
-    if (current_task->done_handler) current_task->done_handler(err, current_task->knob);
+    // if error, cancel all following tasks
+    // (but allow done-handler to generate new ones)
+    if (err) {
+      Task* iter = current_task->next;
+      while (iter) {
+        Task* tmp = iter;
+        iter = iter->next;
+        delete tmp;
+      }
+    }
+    // run done-handler
+    if (current_task->done_handler) {
+      current_task->done_handler(err, current_task->knob);
+    }
+    // delete this task and start next task
     Task* next = current_task->next;
     delete current_task;
     current_task = nullptr;
@@ -111,10 +127,10 @@ namespace gsm {
       } else if (current_task && current_task->message_handler) {
         current_task->message_handler(str);
       } else if (current_task) {
-        logger.println(String("Unhandled message: \"") + str + "\" while running \"" + current_task->cmd + "\"");
+        logger.println(String("Unhandled: \"") + str + "\" running \"" + current_task->cmd + "\"");
         assert(0);
       } else {
-        logger.println(String("Unhandled message: \"") + str);
+        logger.println(String("Unhandled: \"") + str);
         assert(0);
       }
     }
@@ -171,6 +187,40 @@ namespace gsm {
     return task->knob;
   }
 
+
+  bool gprs_status = false;
+  long signal_strength = 0;
+  bool bearer_status = false;
+  
+  void gprs_connect()
+  {
+    if (gprs_status) return;
+    gprs_status = true;
+
+    run("AT+CSQ;+SAPBR=2,1", [&](const String& msg) {
+      if (msg.startsWith("+CSQ:")) {
+        signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
+        logger.println(String(signal_strength));
+      } else if (msg.startsWith("+SAPBR:")) {
+        int index0 = msg.indexOf(',');
+        int index1 = msg.indexOf(',', index0+1);
+        int status = msg.substring(index0+1, index1).toInt();
+        bearer_status = (status==1);
+      }
+    }, [&](bool err, TaskKnob& k) {
+      logger.println("done");
+      k.then("AT+CNETSCAN", 30000);
+    });
+  }
+  
+  void gprs_disconnect()
+  {
+    if (!gprs_status) return;
+    gprs_status = false;
+    
+  }
+
+  
   bool unsolicitedMessageHandler(const String& msg)
   {
     static const char* gobbleList[] = {
@@ -244,13 +294,14 @@ namespace gsm {
       "ALARM RING",
       "+CALV:"
     };
-
+    
     if (msg.startsWith("+CGREG: ")) {
       int status = msg.substring(8, 9).toInt();
       assert(status>=0);
       //gsm_client.updateNetworkStatus(status==1 || status==5);
-      bool status_bool = status==1 || status==5;
-      logger.println(String("GPRS status: ") + status_bool);
+      bool gprs_status = status==1 || status==5;
+      if (gprs_status) gprs_connect();
+      else gprs_disconnect();
       return true;
     }
 

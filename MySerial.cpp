@@ -38,13 +38,13 @@ void MySerial::updateRts()
   bool changed = false;
   if (curRts==false && rx_buffer.available() >= rts_rx_stop) 
   {
-    logger_rx.println("!");
+    if (echo_rx) logger_rx.write('!');
     curRts = true;
     changed = true;
   } 
   else if (curRts==true && rx_buffer.available() <= rts_rx_cont)
   { 
-    logger_rx.println("-");
+    if (echo_rx) logger_rx.write('-');
     curRts = false;
     changed = true;
   }
@@ -73,6 +73,7 @@ void MySerial::IrqHandler()
     auto tmp = sercom->readDataUART();
     if (echo_rx) logger_rx.write(tmp);
     if (rx_buffer.is_full()) {
+      if (echo_rx) logger.write('§');
       //logger.print("_rxOF_");
     } else {
       rx_buffer.push(tmp);
@@ -82,6 +83,7 @@ void MySerial::IrqHandler()
   
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
+    if (echo_rx) logger.write('%');
     //logger.print("_rxER_");
     // TODO: if (sercom->isBufferOverflowErrorUART()) ....
     // TODO: if (sercom->isFrameErrorUART()) ....
