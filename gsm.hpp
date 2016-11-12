@@ -7,32 +7,26 @@ namespace gsm
   using gps_priming_fn_t = std::function<void(const String& lon, const String& lat, const String& date, const String& time_utc)>;
 
   void begin(gps_priming_fn_t gps_priming_callback);
+
   void update(unsigned long timestamp, unsigned long delta);
 
+  static const int default_timeout = 1000;
 
   class Task;
-  class TaskKnob;
-  static const long default_timeout = 1000;
-  Task* make_task(const String& cmd, std::function<void(const String&)> message_handler, std::function<void(bool err, TaskKnob&)> done_handler, unsigned long timeout=default_timeout);
-  Task* make_task(const String& cmd, std::function<void(const String&)> message_handler, unsigned long timeout=default_timeout);
-  Task* make_task(const String& cmd, std::function<void(bool, TaskKnob&)> done_handler, unsigned long timeout=default_timeout);
-  Task* make_task(const String& cmd, unsigned long timeout=default_timeout);
+  class Runner;
 
- 
+  Task* makeTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<void(Runner*)> done_handler);
 
-  class TaskKnob
+  class Runner
   {
-    Task* task;
-    TaskKnob& then_task(Task* task);
+    virtual Runner* thenGeneral(Task* t) = 0; 
   public:
-    TaskKnob(Task* task) : task(task) {}
-    template<typename... Args> TaskKnob& then(Args... args) { return this->then_task(make_task(args...)); } 
-    TaskKnob& abort(int num=0x7FFFFFFF);
+    template<typename... Args> Runner* then(Args... args) { return this->thenGeneral(makeTask(args...)); } 
+    virtual void fail() = 0;
+    virtual void finally(std::function<void(bool err)> finally_handler) = 0;
   };
 
-  TaskKnob& run_task(Task* task); 
-  template<typename... Args> inline TaskKnob& run(Args... args) { return run_task(make_task(args...)); }
-      
+  Runner* runner();
 };
 
 
