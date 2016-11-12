@@ -51,98 +51,6 @@ namespace simcom
     logger.println(time_utc);
   }
 
-  // for now, gobble all unsolicited messages
-  bool gsmUnsolicitedMessageHandler(const String& str)
-  {
-    static const char* gobbleList[] = {
-      //"ATE0", // may be echoed while turning off echo
-      //"RDY", // may be printed during initialization
-      //"+CFUN: 1", // may be printed during initialization
-      //"+CPIN: READY", // may be printed during initialization
-      //"Call Ready", // may be printed during initialization
-      //"SMS Ready", // may be printed during initialization
-
-      "+CCWA:",
-      "+CLIP:",
-      "+CRING:",
-      "+CREG:",
-      "+CCWV:",
-      "+CMTI:", // message
-      "+CMT:", // message
-      "+CBM:", // broadcast message
-      "+CDS:", // sms status report
-      "+COLP:",
-      "+CSSU:",
-      "+CSSI:",
-      "+CLCC:",
-      "*PSNWID:",
-      "*PSUTTZ:",
-      "+CTZV:",
-      "DST:",
-      "+CSMINS:",
-      "+CDRIND:",
-      "+CHF:",
-      "+CENG:",
-      "MO RING",
-      "MO CONNECTED",
-      "+CPIN:", // Indicates whether some password is required
-      "+CSQN:",
-      "+SIMTONE:",
-      "+STTONE:",
-      "+CR:",
-      "+CUSD:",
-      "RING",
-      "NORMAL POWER DOWN",
-      "+CMTE:",
-      "UNDER-VOLTAGE POWER DOWN",
-      "UNDER-VOLTAGE WARNING",
-      "UNDER-VOLTAGE WARNNING",
-      "OVER-VOLTAGE POWER DOWN",
-      "OVER-VOLTAGE WARNING",
-      "OVER-VOLTAGE WARNNING",
-      "CHARGE-ONLY MODE",
-      "RDY",
-      "Call Ready",
-      "SMS Ready",
-      "+CFUN:",
-      //[<n>,]CONNECT OK
-      "CONNECT",
-      //[<n>,]CONNECT FAIL
-      //[<n>,]ALREADY CONNECT
-      //[<n>,]SEND OK 
-      //[<n>,]CLOSED
-      "RECV FROM:",
-      "+IPD,",
-      "+RECEIVE,",
-      "REMOTE IP:",
-      "+CDNSGIP:",
-      "+PDP: DEACT",
-      //"+SAPBR",
-      "+HTTPACTION:",
-      "+FTP",
-      //"+CGREG:",
-      "ALARM RING",
-      "+CALV:"
-    };
-
-    if (str.startsWith("+CGREG: ")) {
-      int status = str.substring(8, 9).toInt();
-      assert(status>=0);
-      //gsm_client.updateNetworkStatus(status==1 || status==5);
-      bool status_bool = status==1 || status==5;
-      logger.println(String("GPRS status: ") + status_bool);
-      return true;
-    }
-    
-    for (int i=0; i<sizeof(gobbleList)/sizeof(*gobbleList); i++) {
-      if (str.startsWith(gobbleList[i])) {
-        //logger.print(String("\"") + str + "\" - gobbled by callback");
-        return true;
-      }
-    }
-    return false;
-  } 
-
   
   void begin() 
   {
@@ -164,24 +72,17 @@ namespace simcom
     assert(isOn());
   
     // GSM
-    gsm::begin(gsmUnsolicitedMessageHandler);
-
-
-    // Turn off echo and enable flow control
-    //gsm::run_h1("ATE0+IFC=2,2", [](const String& msg) {
-//      assert(msg.startsWith("ATE0")); // gobble echo
-    //});
-
-    // Enable unsolicited reporting of connection status
-    //gsm::run("AT+CGREG=1");
+    gsm::begin();
 
     // GPS
     gps::begin();
+
+    logger.println("Setup done!");
   }
   void update(unsigned long timestamp, unsigned long delta)
   {
-    gps::update(timestamp, delta);
     gsm::update(timestamp, delta);
+    gps::update(timestamp, delta);
   }
 }
 
@@ -233,7 +134,7 @@ namespace simcom {
         assert(i < 10);
       }
       serial.setTimeout(1000);
-      logger.println();
+      logger.println("Done detecting baud");
     }
 
   private:

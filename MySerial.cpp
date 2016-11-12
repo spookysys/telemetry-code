@@ -2,7 +2,7 @@
 #include "logging.hpp"
 #include "wiring_private.h" // pinPeripheral() function
 
-MySerial::MySerial(const char* id) : logger(logging::get(id)) {}
+MySerial::MySerial(const char* id, bool echo_tx, bool echo_rx) : logger(logging::get(String(id)+"-tx")), logger_rx(logging::get(String(id)+"-rx")), echo_tx(echo_tx), echo_rx(echo_rx) {}
 
 
 void MySerial::begin(unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, _EPioType pinTypeRX, _EPioType pinTypeTX, SercomRXPad padRX, SercomUartTXPad padTX, SERCOM* sercom)
@@ -36,13 +36,15 @@ void MySerial::updateRts()
   if (!handshakeEnabled) return;
   
   bool changed = false;
-  if (curRts==false && rxBuffer.available() >= rxBuffer.capacity()-rts_rx_margin) 
+  if (curRts==false && rx_buffer.available() >= rts_rx_stop) 
   {
+    logger_rx.println("!");
     curRts = true;
     changed = true;
   } 
-  else if (curRts==true && rxBuffer.available() <= rxBuffer.capacity()-rts_rx_margin*2)
+  else if (curRts==true && rx_buffer.available() <= rts_rx_cont)
   { 
+    logger_rx.println("-");
     curRts = false;
     changed = true;
   }
@@ -54,7 +56,7 @@ void MySerial::updateRts()
 void MySerial::end()
 {
   sercom->resetUART();
-  rxBuffer.clear();
+  rx_buffer.clear();
   updateRts();
 }
 
@@ -69,11 +71,11 @@ void MySerial::IrqHandler()
   
   if (sercom->availableDataUART()) {
     auto tmp = sercom->readDataUART();
-    //if (logger.id!="gps-ser") logger.write(tmp);
-    if (rxBuffer.is_full()) {
+    if (echo_rx) logger_rx.write(tmp);
+    if (rx_buffer.is_full()) {
       //logger.print("_rxOF_");
     } else {
-      rxBuffer.push(tmp);
+      rx_buffer.push(tmp);
       updateRts();
     }
   }
@@ -91,7 +93,7 @@ void MySerial::IrqHandler()
 
 int MySerial::available()
 {
-  return rxBuffer.available(); 
+  return rx_buffer.available(); 
 }
 
 int MySerial::availableForWrite()
@@ -102,20 +104,20 @@ int MySerial::availableForWrite()
 
 int MySerial::peek()
 {
-  return rxBuffer.peek();
+  return rx_buffer.peek();
 }
 
 int MySerial::read()
 {
   if (available()==0) return -1;
-  char ch = rxBuffer.pop();
+  char ch = rx_buffer.pop();
   updateRts();
   return ch;
 }
 
 size_t MySerial::write(const uint8_t data)
 {
-  logger.write(data);
+  if (echo_tx) logger.write(data);
   //while (!availableForWrite());
   sercom->writeDataUART(data);
   return 1;

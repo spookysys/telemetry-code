@@ -32,7 +32,7 @@ public:
     pop_idx = 0;
   }
   
-  int capacity() 
+  constexpr int capacity() 
   {
     return S-1;
   }

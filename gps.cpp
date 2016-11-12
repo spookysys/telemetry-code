@@ -2,7 +2,7 @@
 #include "logging.hpp"
 #include "MySerial.hpp"
 
-namespace gps { MySerial serial("gps-ser"); }
+namespace gps { MySerial serial("gps", true, false); }
 
 void SERCOM5_Handler()
 {
@@ -17,8 +17,9 @@ namespace gps
   
   void begin()
   {
-    logger.println("GPS: Opening serial");
+    logger.println("Opening serial");
     serial.begin(115200, 31ul/*PB23 SERCOM5.3 RX<-GPS_TX */, 30ul/*PB22 SERCOM5.2 TX->GPS_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_3, UART_TX_PAD_2, &sercom5);
+    logger.println("Setup done!");
   }
 
   void update(unsigned long timestamp, unsigned long delta)

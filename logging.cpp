@@ -29,10 +29,23 @@ namespace logging
 
   class LoggerImpl : public Logger
   {
-    String buff="";
+    static const int buff_len = 100;
+    char buff[buff_len+1];
+    int  buff_idx = 0;
   public:
-    LoggerImpl(const String& id) : Logger(id) {}
+    LoggerImpl(const String& id) : Logger(id) { buff[0] = 0; }
 
+    void linebreak() 
+    {
+      if (serial_open) {
+        Serial.print(id);
+        Serial.print("> ");
+        Serial.print(buff);
+        Serial.println("\\");
+      }
+      buff_idx = 0;
+      buff[0] = 0;
+    }
 
     void println()
     {
@@ -41,7 +54,8 @@ namespace logging
         Serial.print("> ");
         Serial.println(buff);
       }
-      buff = "";
+      buff_idx = 0;
+      buff[0] = 0;
     }
 
     char prev_nl = 0;
@@ -51,30 +65,16 @@ namespace logging
         if (!(ch=='\n' && prev_nl=='\r')) println();
         prev_nl = ch;
       } else {
-        buff += ch;
+        buff[buff_idx++] = ch;
+        buff[buff_idx] = 0;
         prev_nl = 0;
+        if (buff_idx==buff_len) linebreak();
       }
     }
 
     void print(const String& op)
     {
-      #if 0
-      int idx_l = 0;
-      int idx_r = indexOfNewline(op, idx_l);
-      while (idx_r>=0) {
-        buff += op.substring(idx_l, idx_r);
-        idx_l = idx_r;
-        while (idx_l<op.length() && (op[idx_l]=='\n' ||  op[idx_l]=='\r')) {
-          write(op[idx_l]);
-        }
-        idx_r = indexOfNewline(op, idx_l);
-      }
-      if (idx_l<op.length()) {
-        buff += op.substring(idx_l);
-      }
-      #else
       for (int i=0; i<op.length(); i++) write((char)op[i]);
-      #endif
     }
 
     void println(const String& op) {
@@ -84,7 +84,7 @@ namespace logging
 
     void flush()
     {
-      if (buff.length()) println();
+      if (buff_idx) println();
       if (serial_open) Serial.flush();
     }
 

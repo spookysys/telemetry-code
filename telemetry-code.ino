@@ -3,7 +3,6 @@
 #include "logging.hpp"
 #include "simcom.hpp"
 
-extern "C" char *sbrk(int i);
 
 namespace {
   Logger& logger = logging::get("main");
@@ -16,11 +15,6 @@ namespace {
     return analogRead(VBAT_PIN) * (ref_volt * 2.f / 1024.f);
   }
   
-  int freeRam ()
-  {
-    char stack_dummy = 0;
-    return &stack_dummy - sbrk(0);
-  }
 
 }
 
@@ -106,8 +100,8 @@ void loop() {
   // blink the mid-led
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-  delay(100);
+  delay(2000);
   digitalWrite(PIN_LED, LOW);
-  delay(100);
+  delay(2000);
   
 }

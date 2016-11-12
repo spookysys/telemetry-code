@@ -10,12 +10,16 @@ class SERCOM;
 class MySerial : public HardwareSerial
 {
   Logger& logger;
+  Logger& logger_rx;
+  bool echo_tx;
+  bool echo_rx;
   
   SERCOM* sercom = nullptr;
 
-  // rxBuffer
-  MyRingBuffer<1024> rxBuffer;
-  static const int rts_rx_margin = 10;
+  // rx_buffer
+  MyRingBuffer<256> rx_buffer;
+  const int rts_rx_stop = rx_buffer.capacity() - 10;
+  const int rts_rx_cont = rx_buffer.capacity() - 20;
 
   // handshaking
   bool handshakeEnabled = false;
@@ -24,7 +28,7 @@ class MySerial : public HardwareSerial
   void updateRts();
 
 public:
-  MySerial(const char* id);
+  MySerial(const char* id, bool echo_tx, bool echo_rx);
 
   void begin(unsigned long) {
     assert(0);
@@ -55,11 +59,11 @@ public:
   }
 
   bool hasString() {
-    return rxBuffer.has_string();
+    return rx_buffer.has_string();
   }
 
   String popString() {
-    auto tmp = rxBuffer.pop_string();
+    auto tmp = rx_buffer.pop_string();
     updateRts();
     return tmp;
   }
