@@ -286,7 +286,7 @@ namespace gsm
     void scheduleReconnect() 
     {
       assert(gprs_status);
-      logger.println("Scheduling reconnection attempt in some seconds");
+      logger.println("Scheduling connection maintenance in some seconds");
       connect_countdown = 15000;
     }
       
@@ -358,12 +358,13 @@ namespace gsm
         }
       )->finally(
         [&](bool err) {
-          if (err) {
-            logger.println("Failed to connect");
+          if (err || !gprs_status) {
+            logger.println("Failed to connect.");
             connectionFailed();
           } else {
-            logger.println("Connected!");
+            logger.println("Connected.");
             connected = true;
+            scheduleReconnect();
           }
         }
       );
