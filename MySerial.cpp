@@ -34,7 +34,6 @@ void MySerial::begin_hs(unsigned long baudrate, uint8_t pinRX, uint8_t pinTX, ui
 void MySerial::updateRts()
 {
   if (!handshakeEnabled) return;
-  
   bool changed = false;
   if (curRts==false && rx_buffer.available() >= rts_rx_stop) 
   {
@@ -73,7 +72,7 @@ void MySerial::IrqHandler()
     auto tmp = sercom->readDataUART();
     if (echo_rx) logger_rx.write(tmp);
     if (rx_buffer.is_full()) {
-      if (echo_rx) logger.write('§');
+      if (echo_rx) logger_rx.write('§');
       //logger.print("_rxOF_");
     } else {
       rx_buffer.push(tmp);
@@ -83,7 +82,7 @@ void MySerial::IrqHandler()
   
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
-    if (echo_rx) logger.write('%');
+    if (echo_rx) logger_rx.write('%');
     //logger.print("_rxER_");
     // TODO: if (sercom->isBufferOverflowErrorUART()) ....
     // TODO: if (sercom->isFrameErrorUART()) ....

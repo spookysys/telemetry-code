@@ -15,15 +15,22 @@ namespace gsm
   class Task;
   class Runner;
 
-  Task* makeTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<void(Runner*)> done_handler);
 
+  Task* makeCommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler);
+  Task* makeFinallyTask(std::function<void(bool err)> handler);
+  
   class Runner
   {
-    virtual Runner* thenGeneral(Task* t) = 0; 
+    virtual Runner* thenGeneral(Task* task) = 0;
   public:
-    template<typename... Args> Runner* then(Args... args) { return this->thenGeneral(makeTask(args...)); } 
-    virtual void fail() = 0;
-    virtual void finally(std::function<void(bool err)> finally_handler) = 0;
+    Runner* then(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler)
+    {
+      return thenGeneral(makeCommandTask(cmd, timeout, message_handler, done_handler));
+    }
+    void finally(std::function<void(bool err)> finally_handler)
+    {
+      thenGeneral(makeFinallyTask(finally_handler));
+    }
   };
 
   Runner* runner();

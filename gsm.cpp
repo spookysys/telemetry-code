@@ -13,80 +13,113 @@ namespace gsm
 {
   Logger& logger = logging::get("gsm");
 
-  
+
   class InitialRunnerImpl : public Runner
   {
     std::function<void(Task*)> enqueue;
     virtual Runner* thenGeneral(Task* then_task);
   public:
     InitialRunnerImpl(std::function<void(Task*)> enqueue_func) : enqueue(enqueue_func) {}
-    void fail() { assert(0); }
-    void finally(std::function<void(bool err)> finally_handler) { assert(0); }
+    void fail() 
+    { 
+      assert(0); 
+    }
   };
 
-
-  class RunnerImpl : public Runner
+  class CommandTask;
+  class CommandRunnerImpl : public Runner
   {
-    Task& task;
+    CommandTask& task;
     virtual Runner* thenGeneral(Task* task);
   public:
-    RunnerImpl(Task& task) : task(task) {}
-    void fail() { logger.println("Runner.fail() not implemented"); }
-    void finally(std::function<void(bool err)> finally_handler) { logger.println("Runner.finally not implemented"); }
+    CommandRunnerImpl(CommandTask& task) : task(task) {}
+    void fail() 
+    { 
+      logger.println("Runner.fail() not implemented"); 
+    }
   };
 
-  
   class Task
   {
   public:
-    Task* next = nullptr;
-    static void insert(Task* task, Task* next);
-    static void cancel(Task* task, int num);
-    static void cancelAll(Task* task) { cancel(task, 0x7FFF); }
+    enum Type {
+      TYPE_COMMAND = 1,
+      TYPE_FINALLY = 2
+    } type;
+
+    Task(Type type) 
+      : type(type)
+      {}
+  };
+  
+  class CommandTask : public Task
+  {
   public:
-    RunnerImpl runner;
+    CommandRunnerImpl runner;
+    Task* next = nullptr;
+  public:
     const String cmd;
     unsigned long timeout = 0;
-    const std::function<void(Runner*)> done_handler = nullptr;
     const std::function<void(const String&)> message_handler = nullptr;
-    Task(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<void(Runner*)> done_handler) : runner(*this), cmd(cmd), timeout(timeout), message_handler(message_handler), done_handler(done_handler) {}
+    const std::function<bool(Runner*)> done_handler = nullptr;
+  public:
+    CommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler) 
+      : Task(TYPE_COMMAND)
+      , runner(*this)
+      , cmd(cmd)
+      , timeout(timeout)
+      , message_handler(message_handler)
+      , done_handler(done_handler) 
+      {}
   };
 
-  Runner* RunnerImpl::thenGeneral(Task* then_task) {
-    assert(then_task);
-    Task::insert(&this->task, then_task);
-    return &then_task->runner;
+  class FinallyTask : public Task
+  {
+  public:
+    const std::function<void(bool)> finally_handler;
+    FinallyTask(std::function<void(bool)> finally_handler) 
+      : Task(TYPE_FINALLY)
+      , finally_handler(finally_handler) 
+      {}
+  };
+
+  Runner* InitialRunnerImpl::thenGeneral(Task* next) { 
+    assert(next);
+    assert(next->type==Task::TYPE_COMMAND);
+    enqueue((CommandTask*)next); 
+    return &((CommandTask*)next)->runner;
   }
 
-  Runner* InitialRunnerImpl::thenGeneral(Task* then_task) { 
-    assert(then_task);
-    enqueue(then_task); 
-    return &then_task->runner;
-  }
+  Runner* CommandRunnerImpl::thenGeneral(Task* next) {
+    assert(next);
     
-  void Task::insert(Task* task, Task* next)
-  {
-    assert(task && next);
-    Task* old_next = task->next;
-    task->next = next;
-    Task* iter = next;
-    while (iter->next) iter = iter->next;
-    iter->next = old_next;
-  }
+    Task* old_next = task.next;
+    task.next = next;
 
-  void Task::cancel(Task* task, int num)
-  {
-    Task* iter = task->next;
-    for (int i=0; i<num && iter; i++) {
-      Task* next = iter->next;
-      delete iter;
-      iter = next;
+    if (old_next) {
+      assert(next->type==Task::TYPE_COMMAND);
+      CommandTask* iter = (CommandTask*)next;
+      while (iter->next) {
+        assert(iter->next->type==Task::TYPE_COMMAND);
+        iter = (CommandTask*)iter->next;
+      }
+      iter->next = old_next;
     }
-    task->next = iter;
+    
+    if (next->type==Task::TYPE_COMMAND) return &((CommandTask*)next)->runner;
+    else return nullptr;
   }
 
-  Task* makeTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<void(Runner*)> done_handler) { 
-    return new Task(cmd, timeout, message_handler, done_handler); 
+    
+
+  Task* makeCommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler) 
+  { 
+    return new CommandTask(cmd, timeout, message_handler, done_handler); 
+  }
+
+  Task* makeFinallyTask(std::function<void(bool err)> handler)
+  {
+    return new FinallyTask(handler);
   }
 
 
@@ -133,32 +166,50 @@ namespace gsm
   
   class GsmLayer1 : protected GsmLayer0 
   {
-    std::queue<Task*> task_queue;
-    Task* current_task = nullptr;
+    std::queue<CommandTask*> task_queue;
+    CommandTask* current_task = nullptr;
 
     void startTask(Task* task)
     {
       assert(task && !current_task);
-      current_task = task;
-      serial.println(current_task->cmd);
-    }
-  
-    void finishTask(bool err) {
-      assert(current_task);
-      if (!err) {
-        if (current_task->done_handler) current_task->done_handler(&current_task->runner);
-        Task* next = current_task->next;
-        delete current_task;
-        current_task = nullptr;
-        if (next) startTask(next);
-      } else {
-        Task::cancelAll(current_task);
-        delete current_task;
-        current_task = nullptr;
+      if (task->type==Task::TYPE_COMMAND) {
+        current_task = (CommandTask*)task;
+        serial.println(((CommandTask*)task)->cmd);
+      } else if (task->type==Task::TYPE_FINALLY) {
+        ((FinallyTask*)task)->finally_handler(false);
       }
     }
 
-    InitialRunnerImpl initial_runner = { [this](Task* task){ task_queue.push(task); } };
+    void failCurrentTask()
+    {
+      assert(current_task);
+      while (current_task) {
+        Task* tmp = current_task->next;
+        delete current_task;
+        current_task = nullptr;
+        if (tmp->type==Task::TYPE_COMMAND) {
+          current_task = (CommandTask*)tmp;
+        } else if (tmp->type==Task::TYPE_FINALLY) {
+          ((FinallyTask*)tmp)->finally_handler(true);
+          delete tmp;
+          break;
+        }
+      }
+    }
+
+    void resolveCurrentTask()
+    {
+      assert(current_task);
+      Task* next = current_task->next;
+      delete current_task;
+      current_task = nullptr;
+      startTask(next);
+    }
+
+    InitialRunnerImpl initial_runner = {[this](Task* task){ 
+      assert(task->type==Task::TYPE_COMMAND);
+      task_queue.push((CommandTask*)task); 
+    }};
 
     virtual bool unsolicitedMessageHandler(const String& msg) = 0;
   public:
@@ -184,10 +235,13 @@ namespace gsm
         } else if (unsolicitedMessageHandler(str)) {
           // ok
         } else if (current_task && str=="OK") {
-          finishTask(false);
+          bool ok = true;
+          if (current_task->done_handler) ok = current_task->done_handler(&current_task->runner);
+          if (ok) resolveCurrentTask();
+          else failCurrentTask();
         } else if (current_task && str=="ERROR") {
           logger.println(String("Error while running \"") + current_task->cmd + "\"");
-          finishTask(true);
+          failCurrentTask();
         } else if (current_task && current_task->message_handler) {
           current_task->message_handler(str);
         } else if (current_task) {
@@ -201,7 +255,7 @@ namespace gsm
   
       if (current_task && current_task->timeout == 0) {
         logger.println(String("Timeout while running \"") + current_task->cmd + "\"");
-        finishTask(true);
+        failCurrentTask();
       }
 
       if (!current_task && task_queue.size()) {
@@ -222,36 +276,40 @@ namespace gsm
   {
   private:
     gsm::gps_priming_fn_t gps_priming_callback = nullptr;
-    
+
+    bool connected = false;
     bool gprs_status = false;
 
-    unsigned long maintain_countdown = 0;
+    unsigned long connect_countdown = 0;
 
     
-    void scheduleMaintenance() 
+    void scheduleReconnect() 
     {
-      logger.println("scheduleMaintenance()");
       assert(gprs_status);
-      maintain_countdown = 30000;
+      logger.println("Scheduling reconnection attempt in some seconds");
+      connect_countdown = 15000;
     }
       
 
     void connectionFailed()
     {
-      logger.println("connectionFailed()");
-      maintain_countdown = 0;
-      if (gprs_status) scheduleMaintenance();
+      if (connected) logger.println("Disconnected");
+      connected = false;
+      connect_countdown = 0;
+      if (gprs_status) scheduleReconnect();
     }
 
     long tmp_signal_strength = 0;
     bool tmp_bearer_status = false;
-    void maintainConnection()
+    bool tmp_msg_error = false;
+    void connect()
     {
-      logger.println("maintainConnection()");
+      logger.println("Connecting");
       assert(gprs_status);
-      assert(maintain_countdown==0);
+      assert(connect_countdown==0);
       tmp_signal_strength = 0;
       tmp_bearer_status = false;
+      tmp_msg_error = false;
       
       runner()->then(
         "AT+CSQ;+SAPBR=2,1", 
@@ -262,40 +320,50 @@ namespace gsm
           } else if (msg.startsWith("+SAPBR:")) {
             int index0 = msg.indexOf(',');
             int index1 = msg.indexOf(',', index0+1);
-            int status = msg.substring(index0+1, index1).toInt();
-            tmp_bearer_status = (status==1);
+            tmp_msg_error = (index0<0 || index1<0);
+            if (!tmp_msg_error) {
+              int status = msg.substring(index0+1, index1).toInt();
+              tmp_bearer_status = (status==1);
+            }
           }
         }, 
         [&](Runner* r) {
-          if (tmp_signal_strength<=1) {
-            r->fail();
-            return;
-          }
+          if (tmp_msg_error || tmp_signal_strength<=1) return false; // fail
           
           if (!tmp_bearer_status) {
-            r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 4000, nullptr, nullptr);
+            r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 90000, nullptr, nullptr);
           }
   
           if (gps_priming_callback) {
             r = r->then(
-              "AT+CIPGSMLOC=1,1", 10000,
+              "AT+CIPGSMLOC=1,1", 61000,
               [&](const String& msg) {
                 int index0 = msg.indexOf(',');
                 int index1 = msg.indexOf(',', index0+1);
                 int index2 = msg.indexOf(',', index1+1);
                 int index3 = msg.indexOf(',', index2+1);
-                gps_priming_callback(msg.substring(index0+1, index1), msg.substring(index1+1, index2), msg.substring(index2+1, index3), msg.substring(index3+1));
-                gps_priming_callback = nullptr;
+                tmp_msg_error = (index0<0 || index1<0 || index2<0 || index3<0);
+                if (!tmp_msg_error) {
+                  gps_priming_callback(msg.substring(index0+1, index1), msg.substring(index1+1, index2), msg.substring(index2+1, index3), msg.substring(index3+1));
+                  gps_priming_callback = nullptr;
+                }
               },
-              nullptr
+              [&](Runner* r) {
+                return !tmp_msg_error;
+              }
             );
           }
+          
+          return true;
         }
       )->finally(
         [&](bool err) {
           if (err) {
+            logger.println("Failed to connect");
             connectionFailed();
-            scheduleMaintenance();
+          } else {
+            logger.println("Connected!");
+            connected = true;
           }
         }
       );
@@ -324,7 +392,7 @@ namespace gsm
         //gsm_client.updateNetworkStatus(status==1 || status==5);
         bool old_status = gprs_status;
         this->gprs_status = (status==1 || status==5);
-        if (!old_status && gprs_status) maintainConnection();
+        if (!old_status && gprs_status) connect();
         else if (!gprs_status) connectionFailed();
         return true;
       }
@@ -351,12 +419,12 @@ namespace gsm
     {
       updateL1(timestamp, delta);
       
-      if (maintain_countdown > delta) {
-        maintain_countdown -= delta;
-      } else if (maintain_countdown > 0) {
-        maintain_countdown = 0;
+      if (connect_countdown > delta) {
+        connect_countdown -= delta;
+      } else if (connect_countdown > 0) {
+        connect_countdown = 0;
         assert(gprs_status);
-        if (gprs_status) maintainConnection();
+        if (gprs_status) connect();
       }
     }
   
