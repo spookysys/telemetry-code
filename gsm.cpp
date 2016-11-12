@@ -428,7 +428,12 @@ namespace gsm
         if (gprs_status) connect();
       }
     }
-  
+
+    bool isConnected()
+    {
+      return connected;
+    }
+    
   };
   
   
@@ -447,8 +452,8 @@ namespace gsm
     }
 
     using GsmLayer1::runner;
-
     using GsmLayer0::IrqHandler;
+    using GsmLayer2::isConnected;
   };
 
 
@@ -469,7 +474,11 @@ namespace gsm
     gsm_obj.update(timestamp, delta);
   }
 
-
+  bool isConnected()
+  {
+    return gsm_obj.isConnected();
+  }
+  
   Runner* runner()
   {
     return gsm_obj.runner();
