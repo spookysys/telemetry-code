@@ -72,7 +72,7 @@ namespace simcom
     assert(isOn());
   
     // GSM
-    gsm::begin();
+    gsm::begin(gpsPrimingCallback);
 
     // GPS
     gps::begin();

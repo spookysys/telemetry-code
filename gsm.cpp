@@ -25,9 +25,73 @@ namespace gsm {
   bool unsolicitedMessageHandler(const String& op);
 
 
-    
-  void begin()
+  bool gprs_status = false;
+  long gprs_signal_strength = 0;
+  bool gprs_bearer_status = false;
+  unsigned long gprs_reconnect_in = 0;
+  
+  gps_priming_fn_t gps_priming_callback = nullptr;
+
+
+
+  
+  void gprs_connect()
   {
+    assert(gprs_status==true);
+    run("AT+CSQ;+SAPBR=2,1", [&](const String& msg) {
+      if (msg.startsWith("+CSQ:")) {
+        gprs_signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
+      } else if (msg.startsWith("+SAPBR:")) {
+        int index0 = msg.indexOf(',');
+        int index1 = msg.indexOf(',', index0+1);
+        int status = msg.substring(index0+1, index1).toInt();
+        gprs_bearer_status = (status==1);
+      }
+    }, [&](bool err, TaskKnob& k) {
+      if (err || gprs_signal_strength<=1) {
+        abort();
+        gprs_reconnect_in = 10000;
+      } else {
+        if (gps_priming_callback) {
+          k.then("AT+CIPGSMLOC=1,1", [&](const String& msg) {
+            int index0 = msg.indexOf(',');
+            int index1 = msg.indexOf(',', index0+1);
+            int index2 = msg.indexOf(',', index1+1);
+            int index3 = msg.indexOf(',', index2+1);
+            gps_priming_callback(msg.substring(index0+1, index1), msg.substring(index1+1, index2), msg.substring(index2+1, index3), msg.substring(index3+1));
+            gps_priming_callback = nullptr;
+          }, [&](bool err, TaskKnob& k) {
+            if (err) {
+              abort();
+              gprs_reconnect_in = 10000;
+            }
+          }, 10000);
+        }
+        if (!gprs_bearer_status) {
+          k.then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", [&](bool err, TaskKnob& k) {
+            if (err) {
+              abort();
+              gprs_reconnect_in = 10000;
+            }
+          }, 10000);
+        }
+      }
+    });
+  }
+  
+  void gprs_disconnect()
+  {
+    assert(gprs_status==false);
+    gprs_signal_strength = 0;
+    gprs_bearer_status = false;
+    gprs_reconnect_in = 0;
+  }
+
+  
+  void begin(gps_priming_fn_t gps_priming_callback)
+  {
+    gsm::gps_priming_callback = gps_priming_callback;
+    
     logger.println("Opening serial");
     serial.begin_hs(57600,  3ul/*PA09 SERCOM2.1 RX<-GSM_TX */,  4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
   
@@ -84,19 +148,11 @@ namespace gsm {
 
   void finish_task(bool err) {
     assert(current_task);
-    // if error, cancel all following tasks
-    // (but allow done-handler to generate new ones)
-    if (err) {
-      Task* iter = current_task->next;
-      while (iter) {
-        Task* tmp = iter;
-        iter = iter->next;
-        delete tmp;
-      }
-    }
     // run done-handler
     if (current_task->done_handler) {
       current_task->done_handler(err, current_task->knob);
+    } else if (err) {
+      current_task->knob.abort();
     }
     // delete this task and start next task
     Task* next = current_task->next;
@@ -145,6 +201,13 @@ namespace gsm {
       task_queue.pop();
       start_task(tmp);
     }
+
+    if (gprs_reconnect_in > delta) {
+      gprs_reconnect_in -= delta;
+    } else if (gprs_reconnect_in > 0) {
+      gprs_reconnect_in = 0;
+      if (gprs_status) gprs_connect();
+    }
   }
 
 
@@ -175,6 +238,18 @@ namespace gsm {
     tmp->next = old_next;
   }
 
+  TaskKnob& TaskKnob::abort(int num) 
+  {
+    assert(task);
+    Task* iter = task->next;
+    for (int i=0; i<num && iter; i++) {
+      Task* tmp = iter;
+      iter = iter->next;
+      delete tmp;
+    }
+    task->next = iter;
+  }
+
   TaskKnob& TaskKnob::then_task(Task* new_next)
   {
     task->insert(new_next);
@@ -187,38 +262,6 @@ namespace gsm {
     return task->knob;
   }
 
-
-  bool gprs_status = false;
-  long signal_strength = 0;
-  bool bearer_status = false;
-  
-  void gprs_connect()
-  {
-    if (gprs_status) return;
-    gprs_status = true;
-
-    run("AT+CSQ;+SAPBR=2,1", [&](const String& msg) {
-      if (msg.startsWith("+CSQ:")) {
-        signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
-        logger.println(String(signal_strength));
-      } else if (msg.startsWith("+SAPBR:")) {
-        int index0 = msg.indexOf(',');
-        int index1 = msg.indexOf(',', index0+1);
-        int status = msg.substring(index0+1, index1).toInt();
-        bearer_status = (status==1);
-      }
-    }, [&](bool err, TaskKnob& k) {
-      logger.println("done");
-      k.then("AT+CNETSCAN", 30000);
-    });
-  }
-  
-  void gprs_disconnect()
-  {
-    if (!gprs_status) return;
-    gprs_status = false;
-    
-  }
 
   
   bool unsolicitedMessageHandler(const String& msg)
@@ -299,9 +342,10 @@ namespace gsm {
       int status = msg.substring(8, 9).toInt();
       assert(status>=0);
       //gsm_client.updateNetworkStatus(status==1 || status==5);
-      bool gprs_status = status==1 || status==5;
-      if (gprs_status) gprs_connect();
-      else gprs_disconnect();
+      bool old_status = gprs_status;
+      gprs_status = status==1 || status==5;
+      if (!old_status && gprs_status) gprs_connect();
+      else if (!gprs_status) gprs_disconnect();
       return true;
     }
 

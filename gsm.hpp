@@ -4,7 +4,9 @@
 
 namespace gsm
 {
-  void begin();
+  using gps_priming_fn_t = std::function<void(const String& lon, const String& lat, const String& date, const String& time_utc)>;
+
+  void begin(gps_priming_fn_t gps_priming_callback);
   void update(unsigned long timestamp, unsigned long delta);
 
 
@@ -24,7 +26,8 @@ namespace gsm
     TaskKnob& then_task(Task* task);
   public:
     TaskKnob(Task* task) : task(task) {}
-    template<typename... Args> TaskKnob& then(Args... args) { return this->then_task(make_task(args...)); }  
+    template<typename... Args> TaskKnob& then(Args... args) { return this->then_task(make_task(args...)); } 
+    TaskKnob& abort(int num=0x7FFFFFFF);
   };
 
   TaskKnob& run_task(Task* task); 
