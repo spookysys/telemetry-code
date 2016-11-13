@@ -81,7 +81,9 @@ namespace gsm
     FinallyTask(std::function<bool(bool, Runner*)> finally_handler)
       : Task(TYPE_FINALLY)
       , finally_handler(finally_handler) 
-      {}
+      {
+        assert(finally_handler);
+      }
   };
 
   Runner* InitialRunnerImpl::thenGeneral(Task* next) { 
@@ -170,42 +172,45 @@ namespace gsm
     std::queue<CommandTask*> task_queue;
     CommandTask* current_task = nullptr;
 
-    void startTask(Task* task)
+    void startTaskFromQueue()
     {
-      assert(task && !current_task);
-      if (task->type==Task::TYPE_COMMAND) {
+      current_task = task_queue.front();
+      task_queue.pop();
+      serial.println(current_task->cmd);
+    }
+
+    bool startTask(Task* task, bool err)
+    {
+      assert(!current_task);
+      if (!task) return err;
+      if (task->type==Task::TYPE_COMMAND && !err) {
         current_task = (CommandTask*)task;
-        serial.println(((CommandTask*)task)->cmd);
+        serial.println(current_task->cmd);
+        return false;
+      } else if (task->type==Task::TYPE_COMMAND && err) {
+        Task* next = task->next;
+        delete task;
+        return startTask(next, err);
       } else if (task->type==Task::TYPE_FINALLY) {
-        ((FinallyTask*)task)->finally_handler(false);
+        Task* next = task->next;
+        err = ((FinallyTask*)task)->finally_handler(err, &task->runner);
+        delete task;
+        if (err) logger.println(String("Finally-handler returned error"));
+        return startTask(next, err);
       }
     }
 
-    void failCurrentTask()
+    void finishTask(bool err)
     {
       assert(current_task);
-      while (current_task) {
-        Task* tmp = current_task->next;
-        delete current_task;
-        current_task = nullptr;
-        if (tmp->type==Task::TYPE_COMMAND) {
-          current_task = (CommandTask*)tmp;
-        } else if (tmp->type==Task::TYPE_FINALLY) {
-          ((FinallyTask*)tmp)->finally_handler(true);
-          delete tmp;
-          break;
-        }
-      }
-    }
-
-    void resolveCurrentTask()
-    {
-      assert(current_task);
+      if (err) logger.println(String("CommandTask returned error: \"") + current_task->cmd + "\"");
       Task* next = current_task->next;
       delete current_task;
       current_task = nullptr;
-      startTask(next);
+      err = startTask(next, err);
+      if (err) logger.println("Task-chain returned error");
     }
+    
 
     InitialRunnerImpl initial_runner = {[this](Task* task){ 
       assert(task->type==Task::TYPE_COMMAND);
@@ -235,15 +240,11 @@ namespace gsm
           // ignore
         } else if (unsolicitedMessageHandler(str)) {
           // ok
-        } else if (current_task && str=="OK") {
-          bool ok = true;
-          if (current_task->done_handler) ok = current_task->done_handler(&current_task->runner);
-          if (ok) resolveCurrentTask();
-          else failCurrentTask();
-        } else if (current_task && str=="ERROR") {
-          logger.println(String("Error while running \"") + current_task->cmd + "\"");
-          failCurrentTask();
-        } else if (current_task && current_task->message_handler) {
+        } else if (current_task && (str=="OK" || str=="ERROR")) {
+          bool err = (str=="ERROR");
+          if (current_task->done_handler) err = current_task->done_handler(&current_task->runner);
+          finishTask(err);
+        } else if (current_task->message_handler) {
           current_task->message_handler(str);
         } else if (current_task) {
           logger.println(String("Unhandled: \"") + str + "\" running \"" + current_task->cmd + "\"");
@@ -253,18 +254,19 @@ namespace gsm
           assert(0);
         }
       }
-  
-      if (current_task && current_task->timeout == 0) {
-        logger.println(String("Timeout while running \"") + current_task->cmd + "\"");
-        failCurrentTask();
+
+      if (current_task) {
+        if (current_task->timeout == 0) {
+          logger.println(String("Timeout while running \"") + current_task->cmd + "\"");
+          finishTask(true);
+        }
       }
 
       if (!current_task && task_queue.size()) {
-        logger.println("Popping task_queue");
-        Task* tmp = task_queue.front();
-        task_queue.pop();
-        startTask(tmp);
+        logger.println("Starting queued task");
+        startTaskFromQueue();
       }
+
     }
 
     Runner* runner() {
@@ -329,7 +331,7 @@ namespace gsm
           }
         }, 
         [&](Runner* r) {
-          if (tmp_msg_error || tmp_signal_strength<=1) return false; // fail
+          if (tmp_msg_error || tmp_signal_strength<=1) return true; // err
           
           if (!tmp_bearer_status) {
             r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000, nullptr, nullptr);
@@ -350,24 +352,25 @@ namespace gsm
                 }
               },
               [&](Runner* r) {
-                return !tmp_msg_error;
+                return tmp_msg_error;
               }
             );
           }
-          
-          return true;
+         
+          return false; // !err
         }
       )->finally(
         [&](bool err, Runner* r) {
           if (err || !gprs_status) {
             logger.println("Failed to connect.");
             connectionFailed();
+            return true; // err
           } else {
             logger.println("Connected.");
             connected = true;
             scheduleReconnect();
+            return false; // !err
           }
-          return true; // caught
         }
       );
     }

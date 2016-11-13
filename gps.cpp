@@ -145,6 +145,13 @@ namespace gps
       } else {
         return false; // Unknown sentence identifier
       }
+      /*
+      gps> Unhandled message: "$PMTK011,MTKGPS*08"
+      gps> Unhandled message: "$PMTK010,001*2E"
+      gps> Unhandled message: "$PMTK011,MTKGPS*08"
+      gps> Unhandled message: "$PMTK010,002*2D"
+      gps> Unhandled message: "$GLGV,1,1,00*65"
+      */
       return true;
     }
     

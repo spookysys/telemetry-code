@@ -22,9 +22,9 @@ public:
         
       }
     )->finally(
-      [&](bool err, Runner* r) {
-        r->then("HTTPTERM");
-        return true;
+      [&](bool err, gsm::Runner* r) {
+        r->then("HTTPTERM", 1000);
+        return false;
       }
     );
       
