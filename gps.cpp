@@ -90,7 +90,7 @@ namespace gps
     }
 
     template<typename T>
-    static void tokenize(const String& str, T& toks)
+    static void tokenizeNmea(const String& str, T& toks)
     {
       int r_idx = -1;
       bool err = false;
@@ -127,14 +127,14 @@ namespace gps
       String sss = msg.substring(idx_l, idx_r);
       if (sss=="GGA") { // Global Positioning System Fix Data. Time, Position and fix related data for a GPS receive
         std::array<String, 11> toks;
-        tokenize(msg, toks);
+        tokenizeNmea(msg, toks);
         gps_data.fix = (toks[6].length()>0) ? toks[6].toInt() : 0;
         gps_data.lat = parseNmeaCoord(toks[2], toks[3]);
         gps_data.lon = parseNmeaCoord(toks[4], toks[5]);
         gps_data.altitude = (toks[10]=="M" && toks[9].length()>0) ? toks[9] : "NaN";
       } else if (sss=="ACCURACY") { // Accuracy
         std::array<String, 2> toks;
-        tokenize(msg, toks);
+        tokenizeNmea(msg, toks);
         gps_data.accuracy = toks[1];
       } else if (sss=="RMC") { // Time, date, position, course and speed data
       } else if (sss=="VTG") { // Course and speed information relative to the ground

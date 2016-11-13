@@ -22,5 +22,23 @@ inline unsigned long freeRam ()
   return &stack_dummy - sbrk(0);
 }
 
+template<typename T>
+static void tokenize(const String& str, T& toks, char separator=',')
+{
+  int r_idx = -1;
+  bool err = false;
+  for (auto& iter : toks) {
+    int l_idx = r_idx+1;
+    r_idx = str.indexOf(separator, l_idx);
+    if (l_idx<0 || r_idx<0) {
+      assert(err);
+      err = true;
+      iter = "";
+    } else {
+      iter = str.substring(l_idx, r_idx);
+    } 
+  }
+}
+
 
 #endif

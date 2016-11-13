@@ -68,8 +68,6 @@ namespace simcom
 
     // GPS
     gps::begin();
-
-    logger.println("Setup done!");
   }
   void update(unsigned long timestamp, unsigned long delta)
   {

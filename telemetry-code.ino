@@ -24,89 +24,60 @@ void setup() {
 
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-
+  
   logging::begin();
   logger.println("Hey there!");
   simcom::begin();
+}
 
-  logger.println("Setup done!");
+
+// called every 10 seconds
+void every_10s(unsigned long timestamp)
+{
+  logger.println("10s");
+
+
+  logger.println(String("Free RAM: ") + String(freeRam()) + " Voltage: " + String(readBatteryVoltage()));  
+
+  gps::GpsData gps_data = gps::get();
+  logger.println(String("lat:")+gps_data.lat+" lon:"+gps_data.lon+" alt:"+gps_data.altitude+" fix:" + String(gps_data.fix) + " accuracy: "+gps_data.accuracy);    
+}
+
+
+// called every 1 second
+void every_1s(unsigned long timestamp)
+{
+  static bool led_val = false;
+  digitalWrite(PIN_LED, led_val);
+  led_val = !led_val;
+}
+
+
+// called every 10th second
+void every_10th_s(unsigned long timestamp)
+{
+  
+}
+
+
+void every(unsigned long timestamp, unsigned long delta)
+{  
+  simcom::update(timestamp, delta);
+
+  delay(100); // thus, in practice every_10th is ~ the same as this
 }
 
 
 
 void loop() {
-  static unsigned long timestamp = 0; 
-  unsigned long delta;
-  {
-    unsigned long new_timestamp = millis();
-    if (timestamp==0) delta = 0;
-    else delta = new_timestamp-timestamp;
-    timestamp = new_timestamp;
-  }
+  static unsigned long last_timestamp = 0;
+  unsigned long timestamp = millis();
+  if (last_timestamp==0) last_timestamp = timestamp;
 
-  //logger.println(String("Free RAM: ") + String(freeRam()) + " Voltage: " + String(readBatteryVoltage()));
+  every(timestamp, timestamp-last_timestamp);  
+  if (timestamp/100 != last_timestamp/100) every_10th_s(timestamp);
+  if ((timestamp+33)/1000 != (last_timestamp+33)/1000) every_1s(timestamp);
+  if ((timestamp+466)/10000 != (last_timestamp+466)/10000) every_10s(timestamp);
   
-  simcom::update(timestamp, delta);
-
-  //logger.print("VBat: " );
-  //logger.println(misc::readBatteryVoltage());
-  //logger.print("Ram: ");
-  //logger.println(freeRam());
-
-  //gsmComm.update();
-  //gpsComm.update();
-  //gpsComm.dumpAll();
-
-
-  //  while (Serial.available()) {
-  //    char ch = Serial.read();
-  //    gsmSerial.write(ch);
-  //  }
-  //  while (gsmSerial.available()) {
-  //    Serial.write((char)gsmSerial.read());
-  //  }
-  /*
-    static int teller=0;
-    static int toggler=0;
-    teller++;
-
-    if (teller==100) {
-      teller=0;
-      switch (toggler) {
-        case 0:
-        logger.println("INPUT_PULLDOWN");
-        pinMode(PIN_GPS_EN, INPUT_PULLDOWN);
-        toggler=1;
-        break;
-        case 1:
-        logger.println("INPUT_PULLUP");
-        pinMode(PIN_GPS_EN, INPUT_PULLUP);
-        toggler=2;
-        break;
-        case 2:
-        logger.println("LOW");
-        pinMode(PIN_GPS_EN, OUTPUT);
-        digitalWrite(PIN_GPS_EN, LOW);
-        toggler=3;
-        break;
-        case 3:
-        logger.println("HIGH");
-        pinMode(PIN_GPS_EN, OUTPUT);
-        digitalWrite(PIN_GPS_EN, HIGH);
-        toggler=0;
-        break;
-      }
-    }
-  */
-  // blink the mid-led
-  pinMode(PIN_LED, OUTPUT);
-  digitalWrite(PIN_LED, HIGH);
-  delay(250);
-  digitalWrite(PIN_LED, LOW);
-  delay(250);
-
-  gps::GpsData gps_data = gps::get();
-  logger.println(String("lat:")+gps_data.lat+" lon:"+gps_data.lon+" alt:"+gps_data.altitude+" fix:" + String(gps_data.fix) + " accuracy: "+gps_data.accuracy);
-
-  
+  last_timestamp = timestamp;
 }

@@ -34,15 +34,18 @@ namespace gsm
   class CommandTask;
   class CommandRunnerImpl : public Runner
   {
-    CommandTask& task;
+    Task& task;
     virtual Runner* thenGeneral(Task* task);
   public:
-    CommandRunnerImpl(CommandTask& task) : task(task) {}
+    CommandRunnerImpl(Task& task) : task(task) {}
   };
 
   class Task
   {
   public:
+    CommandRunnerImpl runner;
+    Task* next = nullptr;
+    
     enum Type {
       TYPE_COMMAND = 1,
       TYPE_FINALLY = 2
@@ -50,14 +53,12 @@ namespace gsm
 
     Task(Type type) 
       : type(type)
+      , runner(*this)
       {}
   };
   
   class CommandTask : public Task
   {
-  public:
-    CommandRunnerImpl runner;
-    Task* next = nullptr;
   public:
     const String cmd;
     unsigned long timeout = 0;
@@ -66,7 +67,6 @@ namespace gsm
   public:
     CommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler) 
       : Task(TYPE_COMMAND)
-      , runner(*this)
       , cmd(cmd)
       , timeout(timeout)
       , message_handler(message_handler)
@@ -77,8 +77,8 @@ namespace gsm
   class FinallyTask : public Task
   {
   public:
-    const std::function<void(bool)> finally_handler;
-    FinallyTask(std::function<void(bool)> finally_handler) 
+    const std::function<bool(bool, Runner*)> finally_handler;
+    FinallyTask(std::function<bool(bool, Runner*)> finally_handler)
       : Task(TYPE_FINALLY)
       , finally_handler(finally_handler) 
       {}
@@ -118,7 +118,7 @@ namespace gsm
     return new CommandTask(cmd, timeout, message_handler, done_handler); 
   }
 
-  Task* makeFinallyTask(std::function<void(bool err)> handler)
+  Task* makeFinallyTask(std::function<bool(bool err, Runner*)> handler)
   {
     return new FinallyTask(handler);
   }
@@ -358,7 +358,7 @@ namespace gsm
           return true;
         }
       )->finally(
-        [&](bool err) {
+        [&](bool err, Runner* r) {
           if (err || !gprs_status) {
             logger.println("Failed to connect.");
             connectionFailed();
@@ -367,6 +367,7 @@ namespace gsm
             connected = true;
             scheduleReconnect();
           }
+          return true; // caught
         }
       );
     }
@@ -436,7 +437,7 @@ namespace gsm
     }
     
   };
-  
+
   
   class GsmFacade : protected GsmLayer2
   {
@@ -444,7 +445,6 @@ namespace gsm
     void begin(gps_priming_fn_t gps_priming_callback) 
     {
       this->beginL2(gps_priming_callback);
-      logger.println("inited!");
     }
 
     void update(unsigned long timestamp, unsigned long delta)
