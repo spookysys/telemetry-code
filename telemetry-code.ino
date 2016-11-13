@@ -2,7 +2,8 @@
 #include "common.hpp"
 #include "logging.hpp"
 #include "simcom.hpp"
-
+#include "gps.hpp"
+#include "gsm.hpp"
 
 namespace {
   Logger& logger = logging::get("main");
@@ -43,7 +44,7 @@ void loop() {
     timestamp = new_timestamp;
   }
 
-
+  //logger.println(String("Free RAM: ") + String(freeRam()) + " Voltage: " + String(readBatteryVoltage()));
   
   simcom::update(timestamp, delta);
 
@@ -103,5 +104,9 @@ void loop() {
   delay(250);
   digitalWrite(PIN_LED, LOW);
   delay(250);
+
+  gps::GpsData gps_data = gps::get();
+  logger.println(String("lat:")+gps_data.lat+" lon:"+gps_data.lon+" alt:"+gps_data.altitude+" fix:" + String(gps_data.fix) + " accuracy: "+gps_data.accuracy);
+
   
 }

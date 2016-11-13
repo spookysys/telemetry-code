@@ -5,8 +5,13 @@
 
 // APN setup
 #define APN "data.lyca-mobile.no"
-#define APN_USER "lmno"
-#define APN_PW "plus"
+//#define APN_USER "lmno"
+//#define APN_PW "plus"
+
+// data.sparkfun setup
+static const String publicKey = "roMd2jR96OTpEAb4jG1y";
+static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
+static const String inputUrl = "http://data.sparkfun.com/input/roMd2jR96OTpEAb4jG1y";
 
 
 namespace gsm
@@ -33,10 +38,6 @@ namespace gsm
     virtual Runner* thenGeneral(Task* task);
   public:
     CommandRunnerImpl(CommandTask& task) : task(task) {}
-    void fail() 
-    { 
-      logger.println("Runner.fail() not implemented"); 
-    }
   };
 
   class Task
@@ -331,12 +332,12 @@ namespace gsm
           if (tmp_msg_error || tmp_signal_strength<=1) return false; // fail
           
           if (!tmp_bearer_status) {
-            r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 90000, nullptr, nullptr);
+            r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000, nullptr, nullptr);
           }
   
           if (gps_priming_callback) {
             r = r->then(
-              "AT+CIPGSMLOC=1,1", 61000,
+              "AT+CIPGSMLOC=1,1", 20000,
               [&](const String& msg) {
                 int index0 = msg.indexOf(',');
                 int index1 = msg.indexOf(',', index0+1);
@@ -437,7 +438,7 @@ namespace gsm
   };
   
   
-  class GsmLayer3 : protected GsmLayer2
+  class GsmFacade : protected GsmLayer2
   {
   public:
     void begin(gps_priming_fn_t gps_priming_callback) 
@@ -462,7 +463,7 @@ namespace gsm
 
 namespace gsm
 {
-  GsmLayer3 gsm_obj;
+  GsmFacade gsm_obj;
   
   void begin(gps_priming_fn_t gps_priming_callback)
   {
