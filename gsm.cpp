@@ -18,12 +18,11 @@ namespace gsm
   class InitialRunnerImpl : public Runner
   {
     std::function<void(Task*)> enqueue;
-    virtual Runner* thenGeneral(Task* then_task);
+    virtual Runner* thenGeneral(Task* task);
   public:
     InitialRunnerImpl(std::function<void(Task*)> enqueue_func) : enqueue(enqueue_func) {}
   };
 
-  class CommandTask;
   class CommandRunnerImpl : public Runner
   {
     Task& task;
@@ -31,6 +30,7 @@ namespace gsm
   public:
     CommandRunnerImpl(Task& task) : task(task) {}
   };
+
 
   class Task
   {
@@ -40,7 +40,7 @@ namespace gsm
     
     enum Type {
       TYPE_COMMAND = 1,
-      TYPE_FINALLY = 2
+      TYPE_SYNC = 2
     } type;
 
     Task(Type type) 
@@ -51,67 +51,67 @@ namespace gsm
   
   class CommandTask : public Task
   {
+    static Result defaultHandlerImpl(const String& msg, Runner* r) 
+    {
+      if (msg=="OK") return OK;
+      else if (msg=="ERROR") return ERROR;
+      return NOP;
+    }
   public:
     const String cmd;
     unsigned long timeout = 0;
-    const std::function<void(const String&)> message_handler = nullptr;
-    const std::function<bool(Runner*)> done_handler = nullptr;
+    const std::function<Result(const String&, Runner* runner)> handler = nullptr;
   public:
-    CommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler) 
+    CommandTask(const String& cmd, unsigned long timeout, std::function<Result(const String&, Runner*)> handler) 
       : Task(TYPE_COMMAND)
       , cmd(cmd)
       , timeout(timeout)
-      , message_handler(message_handler)
-      , done_handler(done_handler) 
-      {}
+      , handler(handler ? handler : defaultHandlerImpl) 
+      { assert(this->handler); }
   };
 
-  class FinallyTask : public Task
+  class SyncTask : public Task
   {
   public:
-    const std::function<bool(bool, Runner*)> finally_handler;
-    FinallyTask(std::function<bool(bool, Runner*)> finally_handler)
-      : Task(TYPE_FINALLY)
-      , finally_handler(finally_handler) 
-      {
-        assert(finally_handler);
+    const std::function<Result(bool, Runner*)> handler;
+    SyncTask(std::function<Result(bool, Runner*)> handler)
+      : Task(TYPE_SYNC)
+      , handler(handler) 
+      { 
+        assert(handler);
       }
   };
 
   Runner* InitialRunnerImpl::thenGeneral(Task* next) { 
     assert(next);
-    assert(next->type==Task::TYPE_COMMAND);
-    enqueue((CommandTask*)next); 
-    return &((CommandTask*)next)->runner;
+    enqueue(next);
+    return &next->runner;
   }
 
   Runner* CommandRunnerImpl::thenGeneral(Task* next) {
     assert(next);
-    
     Task* old_next = task.next;
     task.next = next;
-
     if (old_next) {
-      Task* iter = (CommandTask*)next;
+      Task* iter = next;
       while (iter->next) {
         iter = (Task*)iter->next;
       }
       iter->next = old_next;
     }
-    
     return &next->runner;
   }
 
     
 
-  Task* makeCommandTask(const String& cmd, unsigned long timeout, std::function<void(const String&)> message_handler, std::function<bool(Runner*)> done_handler) 
+  Task* makeCommandTask(const String& cmd, unsigned long timeout, std::function<Result(const String&, Runner*)> handler) 
   { 
-    return new CommandTask(cmd, timeout, message_handler, done_handler); 
+    return new CommandTask(cmd, timeout, handler); 
   }
 
-  Task* makeFinallyTask(std::function<bool(bool err, Runner*)> handler)
+  Task* makeSyncTask(std::function<Result(bool failed, Runner*)> handler)
   {
-    return new FinallyTask(handler);
+    return new SyncTask(handler);
   }
 
 
@@ -158,52 +158,51 @@ namespace gsm
   
   class GsmLayer1 : protected GsmLayer0 
   {
-    std::queue<CommandTask*> task_queue;
+    std::queue<Task*> task_queue;
     CommandTask* current_task = nullptr;
 
-    void startTaskFromQueue()
-    {
-      current_task = task_queue.front();
-      task_queue.pop();
-      serial.println(current_task->cmd);
-    }
 
-    bool startTask(Task* task, bool err)
+
+    void startTask(Task* task, bool failed)
     {
       assert(!current_task);
-      if (!task) return err;
-      if (task->type==Task::TYPE_COMMAND && !err) {
+      if (!task) return;
+      if (task->type==Task::TYPE_COMMAND && !failed) {
         current_task = (CommandTask*)task;
         serial.println(current_task->cmd);
-        return false;
-      } else if (task->type==Task::TYPE_COMMAND && err) {
+      } else if (task->type==Task::TYPE_COMMAND && failed) {
         Task* next = task->next;
         delete task;
-        return startTask(next, err);
-      } else if (task->type==Task::TYPE_FINALLY) {
+        startTask(next, true);
+      } else if (task->type==Task::TYPE_SYNC) {
         Task* next = task->next;
-        err = ((FinallyTask*)task)->finally_handler(err, &task->runner);
+        Result res = ((SyncTask*)task)->handler(failed, &task->runner);
         delete task;
-        //if (err) logger.println(String("Finally-handler returned error"));
-        return startTask(next, err);
+        if (res==NOP) startTask(next, failed);
+        else if (res==OK) startTask(next, false);
+        else if (res==ERROR) startTask(next, true);
+        else assert(!"Invalid handler result");
       }
     }
-
-    void finishTask(bool err)
+    
+    void finishTask(bool failed)
     {
       assert(current_task);
-      //if (err) logger.println(String("Task returned error: \"") + current_task->cmd + "\"");
       Task* next = current_task->next;
       delete current_task;
       current_task = nullptr;
-      err = startTask(next, err);
-      //if (err) logger.println("Task-chain returned error");
+      startTask(next, failed);
     }
-    
+
+    void startQueuedTask()
+    {
+      Task* task = task_queue.front();
+      task_queue.pop();
+      startTask(task, false);
+    }    
 
     InitialRunnerImpl initial_runner = {[this](Task* task){ 
-      assert(task->type==Task::TYPE_COMMAND);
-      task_queue.push((CommandTask*)task); 
+      task_queue.push(task); 
     }};
 
     virtual bool unsolicitedMessageHandler(const String& msg) = 0;
@@ -216,11 +215,9 @@ namespace gsm
     void updateL1(unsigned long timestamp, unsigned long delta)
     {   
       updateL0();
-      
-      if (current_task) {
-        if (current_task->timeout > delta) current_task->timeout -= delta;
-        else current_task->timeout = 0;
-      }
+
+      if (current_task && current_task->timeout > delta) current_task->timeout -= delta;
+      else if (current_task) current_task->timeout = 0;
       
       while (serial.hasString())
       {
@@ -229,33 +226,28 @@ namespace gsm
           // ignore
         } else if (unsolicitedMessageHandler(str)) {
           // ok
-        } else if (current_task && (str=="OK" || str=="ERROR")) {
-          bool err = (str=="ERROR");
-          if (current_task->done_handler) err = current_task->done_handler(&current_task->runner);
-          finishTask(err);
-        } else if (current_task->message_handler) {
-          current_task->message_handler(str);
+        } else if (current_task) {
+          Result res = current_task->handler(str, &current_task->runner);
+          if (res==NOP) { /*keep running */ }
+          else if (res==OK) finishTask(false);
+          else if (res==ERROR) finishTask(true);
+          else assert(!"Invalid handler result");
         } else if (current_task) {
           logger.println(String("Unhandled: \"") + str + "\" running \"" + current_task->cmd + "\"");
-          assert(0);
         } else {
           logger.println(String("Unhandled: \"") + str);
-          assert(0);
         }
       }
 
-      if (current_task) {
-        if (current_task->timeout == 0) {
-          logger.println(String("Timeout while running \"") + current_task->cmd + "\"");
-          finishTask(true);
-        }
+      if (current_task && current_task->timeout == 0) {
+        logger.println(String("Timeout running \"") + current_task->cmd + "\"");
+        finishTask(true);
       }
 
       if (!current_task && task_queue.size()) {
         logger.println("Starting queued task");
-        startTaskFromQueue();
+        startQueuedTask();
       }
-
     }
 
     Runner* runner() {
@@ -267,98 +259,6 @@ namespace gsm
   class GsmLayer2 : protected GsmLayer1
   {
   private:
-    gsm::gps_priming_fn_t gps_priming_callback = nullptr;
-
-    bool connected = false;
-    bool gprs_status = false;
-
-    unsigned long connect_countdown = 0;
-
-    
-    void scheduleReconnect() 
-    {
-      assert(gprs_status);
-      logger.println("Scheduling connection maintenance in some seconds");
-      connect_countdown = 15000;
-    }
-      
-
-    long tmp_signal_strength = 0;
-    bool tmp_bearer_status = false;
-    bool tmp_msg_error = false;
-    void connect()
-    {
-      logger.println("Connecting");
-      assert(gprs_status);
-      assert(connect_countdown==0);
-      tmp_signal_strength = 0;
-      tmp_bearer_status = false;
-      tmp_msg_error = false;
-      
-      runner()->then(
-        "AT+CSQ;+SAPBR=2,1", 
-        10000, 
-        [&](const String& msg) {
-          if (msg.startsWith("+CSQ:")) {
-            tmp_signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
-          } else if (msg.startsWith("+SAPBR:")) {
-            int index0 = msg.indexOf(',');
-            int index1 = msg.indexOf(',', index0+1);
-            tmp_msg_error = (index0<0 || index1<0);
-            if (!tmp_msg_error) {
-              int status = msg.substring(index0+1, index1).toInt();
-              tmp_bearer_status = (status==1);
-            }
-          }
-        }, 
-        [&](Runner* r) {
-          if (tmp_msg_error || tmp_signal_strength<=1) return true; // err
-          
-          if (!tmp_bearer_status) {
-            r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000, nullptr, nullptr);
-          }
-  
-          if (gps_priming_callback) {
-            r = r->then(
-              "AT+CIPGSMLOC=1,1", 20000,
-              [&](const String& msg) {
-                int index0 = msg.indexOf(',');
-                int index1 = msg.indexOf(',', index0+1);
-                int index2 = msg.indexOf(',', index1+1);
-                int index3 = msg.indexOf(',', index2+1);
-                tmp_msg_error = (index0<0 || index1<0 || index2<0 || index3<0);
-                if (!tmp_msg_error) {
-                  gps_priming_callback(msg.substring(index0+1, index1), msg.substring(index1+1, index2), msg.substring(index2+1, index3), msg.substring(index3+1));
-                  gps_priming_callback = nullptr;
-                }
-              },
-              [&](Runner* r) {
-                return tmp_msg_error;
-              }
-            );
-          }
-         
-          return false; // !err
-        }
-      )->finally(
-        [&](bool err, Runner* r) {
-          if (err || !gprs_status) {
-            logger.println("Failed to connect.");
-            connectionFailed();
-            return true; // err
-          } else {
-            logger.println("Connected.");
-            connected = true;
-            //scheduleReconnect();
-            return false; // !err
-          }
-        }
-      );
-    }
-    
-
-  
-  
     bool unsolicitedMessageHandler(const String& msg)
     {
       static const char* gobbleList[] = {
@@ -370,7 +270,7 @@ namespace gsm
         "CHARGE-ONLY MODE", "RDY", "Call Ready", "SMS Ready", "+CFUN:", /*[<n>,]CONNECT OK*/ "CONNECT",
         /*[<n>,]CONNECT FAIL*/ /*[<n>,]ALREADY CONNECT*/ /*[<n>,]SEND OK*/ /*[<n>,]CLOSED*/ "RECV FROM:",
         "RECV FROM:", "+IPD,", "+RECEIVE,", "REMOTE IP:", "+CDNSGIP:", "+PDP: DEACT", /*"+SAPBR",*/
-        "+HTTPACTION:", "+FTP", /*"+CGREG:",*/ "ALARM RING", "+CALV:"
+        /*"+HTTPACTION:",*/ "+FTP", /*"+CGREG:",*/ "ALARM RING", "+CALV:"
       };
       
       if (msg.startsWith("+CGREG: ")) {
@@ -379,48 +279,93 @@ namespace gsm
         //gsm_client.updateNetworkStatus(status==1 || status==5);
         bool old_status = gprs_status;
         this->gprs_status = (status==1 || status==5);
-        if (!old_status && gprs_status) connect();
+        if (!old_status && gprs_status) maintainConnection();
         else if (!gprs_status) connectionFailed();
         return true;
       }
   
       for (int i=0; i<sizeof(gobbleList)/sizeof(*gobbleList); i++) {
-        if (msg.startsWith(gobbleList[i])) {
-          //logger.print(String("\"") + msg + "\" - gobbled by callback");
-          return true;
-        }
+        if (msg.startsWith(gobbleList[i])) return true;
       }
       return false;
     }
+  
+  private:
+    gsm::gps_priming_fn_t gps_priming_callback = nullptr;
 
-      
+    bool connected = false;
+    bool gprs_status = false;
+
+    bool maintainConnectionRunning = false;
+    long signal_strength = 0;
   public:
-
+  
+    void maintainConnection()
+    {
+      if (!gprs_status || maintainConnectionRunning) return;
+      logger.println("Connection Maintenance");
+      maintainConnectionRunning = true;
+      
+      runner()->then(
+        "AT+CSQ;+SAPBR=2,1", 10000, 
+        [this](const String& msg, Runner* r) {
+          if (msg.startsWith("+CSQ:")) {
+            signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
+          }
+          else if (msg.startsWith("+SAPBR:")) {
+            std::array<String, 2> toks;
+            tokenize(msg, toks);
+            logger.println(String("Bearer status: ") + toks[1]);
+            if (toks[1]!="1")
+            {
+              r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000);
+              if (gps_priming_callback) {
+                r = r->then(
+                  "AT+CIPGSMLOC=1,1", 20000,
+                  [this](const String& msg, Runner* r) {
+                    if (msg.startsWith("+CIPGSMLOC")) {
+                      std::array<String, 5> toks;
+                      tokenize(msg, toks);
+                      gps_priming_callback(toks[1], toks[2], toks[3], toks[4]);
+                      gps_priming_callback = nullptr;
+                    } 
+                    else if (msg=="OK") return OK;
+                    else if (msg=="ERROR") return ERROR;
+                    return NOP;
+                  }
+                );
+              }
+            }
+          }
+          else if (msg=="OK" && signal_strength>1) return OK;
+          else if (msg=="OK" || msg=="ERROR") return ERROR;
+          return NOP;
+        }
+      )->sync(
+        [this](bool failed, Runner* r) {
+          maintainConnectionRunning = false;
+          if (failed || !gprs_status) {
+            logger.println("Failed to connect.");
+            connectionFailed();
+          } else {
+            logger.println("Connected.");
+            connected = true;
+          }
+          return NOP;
+        }
+      );
+    }
+    
     void connectionFailed()
     {
       if (connected) logger.println("Disconnected");
       connected = false;
-      connect_countdown = 0;
-      if (gprs_status) scheduleReconnect();
     }
       
     void beginL2(gps_priming_fn_t gps_priming_callback) 
     {
       this->beginL1();
       this->gps_priming_callback = gps_priming_callback;
-    }
-
-    void updateL2(unsigned long timestamp, unsigned long delta)
-    {
-      updateL1(timestamp, delta);
-      
-      if (connect_countdown > delta) {
-        connect_countdown -= delta;
-      } else if (connect_countdown > 0) {
-        connect_countdown = 0;
-        assert(gprs_status);
-        if (gprs_status) connect();
-      }
     }
 
     bool isConnected()
@@ -441,7 +386,7 @@ namespace gsm
 
     void update(unsigned long timestamp, unsigned long delta)
     {
-      updateL2(timestamp, delta);
+      updateL1(timestamp, delta);
 
       while (Serial.available()) {
         serial.write(Serial.read());
@@ -452,6 +397,7 @@ namespace gsm
     using GsmLayer0::IrqHandler;
     using GsmLayer2::isConnected;
     using GsmLayer2::connectionFailed;
+    using GsmLayer2::maintainConnection;
   };
 
 
@@ -480,6 +426,11 @@ namespace gsm
   void connectionFailed()
   {
     gsm_obj.connectionFailed();
+  }
+
+  void maintainConnection()
+  {
+    gsm_obj.maintainConnection();
   }
   
   Runner* runner()

@@ -10,7 +10,7 @@
 // data.sparkfun setup
 static const String publicKey = "roMd2jR96OTpEAb4jG1y";
 static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
-static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?privateKey="+privateKey;
+static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?private_key="+privateKey;
 
 
 namespace {
@@ -39,17 +39,20 @@ void setup() {
 }
 
 
-
-// called every 10 seconds
-void every_10s(unsigned long timestamp)
+void sendData(unsigned long timestamp)
 {
-  logger.println("10s");
-
+  
   gps::GpsData gps_data = gps::get();
 
-  String url = inputUrl + "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
-  if (gps_data.fix!=0) url += String("") + "&fix=" + String(gps_data.fix) + "&altitude=" + gps_data.altitude + "&latitude=" + gps_data.latitude + "&longitude=" + gps_data.longitude + "&accuracy=" + gps_data.accuracy;
-  if (gsm::isConnected() && !http::isRqInProgress()) {
+  // generate string
+  String url = inputUrl;
+  url += "&timestamp=" + timestamp;
+  url += "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
+  url += String("") + "&gps_fix=" + String(gps_data.fix) + "&gps_altitude=" + gps_data.altitude + "&gps_latitude=" + gps_data.latitude + "&gps_longitude=" + gps_data.longitude + "&gps_accuracy=" + gps_data.accuracy;
+  url += "&log=";
+ 
+  // upload
+  if (gsm::isConnected() && !http::isRequesting()) {
     http::rqGet(
       url, 
       [](bool err) { 
@@ -57,7 +60,21 @@ void every_10s(unsigned long timestamp)
       }
     );
   }
-  
+    
+}
+
+
+void every_30s(unsigned long timestamp)
+{
+  gsm::maintainConnection();
+}
+
+
+
+// called every 10 seconds
+void every_10s(unsigned long timestamp)
+{
+  sendData(timestamp);  
 }
 
 
@@ -93,8 +110,9 @@ void loop() {
 
   every(timestamp, timestamp-last_timestamp);  
   if (timestamp/100 != last_timestamp/100) every_10th_s(timestamp);
-  if ((timestamp+33)/1000 != (last_timestamp+33)/1000) every_1s(timestamp);
-  if ((timestamp+466)/10000 != (last_timestamp+466)/10000) every_10s(timestamp);
+  if ((timestamp+50)/1000 != (last_timestamp+33)/1000) every_1s(timestamp);
+  if ((timestamp+475)/10000 != (last_timestamp+475)/10000) every_10s(timestamp);
+  if ((timestamp+5525)/30000 != (last_timestamp+5525)/30000) every_30s(timestamp);
   
   last_timestamp = timestamp;
 }

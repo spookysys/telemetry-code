@@ -59,34 +59,33 @@ namespace gps
       return gps_data; 
     }
 
-    bool run(const String& command, std::function<bool(const String&)> rsp_handler, unsigned long timeout=1000)
+    bool run(const String& command, std::function<bool(const String&)> rsp_handler, unsigned long timeout=1000, int attempts=4)
     {
-      long end_time = millis() + timeout;
       int checksum = 0;
       for (int i=0; i<command.length(); i++) {
         auto ch = command[i];
         if (i==0 && ch=='$') continue;
         checksum ^= ch;
       }
-      while(1) {
+      for (int attempt_i = 0; attempt_i<attempts; attempt_i++)
+      {
         serial.println(command + "*" + String(checksum, HEX));
-        delay(100);
-        while (serial.hasString()) {
-          String rsp = serial.popString();
-          if (rsp_handler(rsp)) {
-            logger.println("OK");
-            return true;
-          } else if (unsolicitedMessageHandler(rsp)) {
-            // it was an unrelated message; go on
-          } else {
-            logger.println(String("Unknown response: \"") + rsp + "\"");
+        for (int i=0; i<timeout/100; i++) {
+          delay(100);
+          while (serial.hasString()) {
+            String rsp = serial.popString();
+            if (rsp_handler(rsp)) {
+              logger.println("OK");
+              return true;
+            } else if (unsolicitedMessageHandler(rsp)) {
+              // it was an unrelated message; go on
+            } else {
+              logger.println(String("Unknown response: \"") + rsp + "\"");
+            }
           }
         }
-        if (millis()>end_time) {
-          logger.println("Timeout");
-          return false;
-        }
       }
+      return false;
     }
 
     template<typename T>
@@ -98,13 +97,8 @@ namespace gps
         int l_idx = r_idx+1;
         r_idx = str.indexOf(',', l_idx);
         if (r_idx<0) r_idx = str.indexOf('*', l_idx);
-        if (l_idx<0 || r_idx<0) {
-          assert(err);
-          err = true;
-          iter = "";
-        } else {
-          iter = str.substring(l_idx, r_idx);
-        } 
+        if (l_idx<0 || r_idx<0) return;
+        else iter = str.substring(l_idx, r_idx);
       }
     }
 

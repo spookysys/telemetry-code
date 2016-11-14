@@ -30,13 +30,9 @@ static void tokenize(const String& str, T& toks, char separator=',')
   for (auto& iter : toks) {
     int l_idx = r_idx+1;
     r_idx = str.indexOf(separator, l_idx);
-    if (l_idx<0 || r_idx<0) {
-      assert(err);
-      err = true;
-      iter = "";
-    } else {
-      iter = str.substring(l_idx, r_idx);
-    } 
+    if (l_idx<0) return;
+    else if (r_idx<0) iter = str.substring(l_idx);
+    else iter = str.substring(l_idx, r_idx);
   }
 }
 

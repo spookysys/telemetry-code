@@ -5,8 +5,8 @@
 namespace http
 {
 
-  bool rqGet(const String& url, std::function<void(bool)> done_callback=nullptr);
-  int  isRqInProgress();
+  void rqGet(const String& url, std::function<void(bool)> done_callback=nullptr);
+  bool isRequesting();
 }
 
 
