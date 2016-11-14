@@ -41,12 +41,13 @@ void setup() {
 
 void sendData(unsigned long timestamp)
 {
+  int seconds = timestamp / 1000;
   
   gps::GpsData gps_data = gps::get();
 
   // generate string
   String url = inputUrl;
-  url += "&timestamp=" + timestamp;
+  url += "&seconds=" + String(seconds);
   url += "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
   url += String("") + "&gps_fix=" + String(gps_data.fix) + "&gps_altitude=" + gps_data.altitude + "&gps_latitude=" + gps_data.latitude + "&gps_longitude=" + gps_data.longitude + "&gps_accuracy=" + gps_data.accuracy;
   url += "&log=";
@@ -55,8 +56,12 @@ void sendData(unsigned long timestamp)
   if (gsm::isConnected() && !http::isRequesting()) {
     http::rqGet(
       url, 
-      [](bool err) { 
-        logger.println(String("get returned with ") + err);
+      [seconds](bool err, int status) { 
+        if (!err && (status==200 || status==201 || status==202)) {
+          logger.println(String("Logged with status ") + String(status) + " at " + String(seconds) + "s");
+        } else {
+          logger.println(String("Logging failed with status ") + String(status) + " at " + String(seconds) + "s");
+        }
       }
     );
   }
@@ -110,9 +115,9 @@ void loop() {
 
   every(timestamp, timestamp-last_timestamp);  
   if (timestamp/100 != last_timestamp/100) every_10th_s(timestamp);
-  if ((timestamp+50)/1000 != (last_timestamp+33)/1000) every_1s(timestamp);
-  if ((timestamp+475)/10000 != (last_timestamp+475)/10000) every_10s(timestamp);
-  if ((timestamp+5525)/30000 != (last_timestamp+5525)/30000) every_30s(timestamp);
+  if ((timestamp-50)/1000 != (last_timestamp-50)/1000) every_1s(timestamp);
+  if ((timestamp-525)/10000 != (last_timestamp-525)/10000) every_10s(timestamp);
+  if ((timestamp-5575)/30000 != (last_timestamp-5575)/30000) every_30s(timestamp);
   
   last_timestamp = timestamp;
 }

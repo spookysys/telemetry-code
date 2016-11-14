@@ -14,6 +14,7 @@ namespace http
 
     int tmp_cnt;
     bool tmp_err;
+    int tmp_status;
   public:
 
     bool isRequesting()
@@ -21,14 +22,15 @@ namespace http
       return requesting;
     }
 
-    void rqGet(const String& url, std::function<void(bool)> done_callback)
+    void rqGet(const String& url, std::function<void(bool, int)> done_callback)
     {
       if (!isConnected()) {
-        done_callback(false);
+        done_callback(false, -1);
         return;
       }
 
       this->requesting = true;
+      this->tmp_status = -1;
       
       gsm::runner()->then(
         "AT+HTTPINIT", 1000
@@ -46,9 +48,8 @@ namespace http
           if (msg.startsWith("+HTTPACTION:")) {
             std::array<String, 3> toks;
             tokenize(msg, toks);
-            int status = toks[1].toInt();
-            int bytes = toks[2].toInt();
-            logger.println(String("Status: ") + String(status) + String(" Bytes: ") + toks[2]);
+            tmp_status = toks[1].toInt();
+            //logger.println(String("Status: ") + String(status) + String(" Bytes: ") + toks[2]);
             return (++tmp_cnt==2) ? OK : NOP; // NOTE
           }
           else if (msg=="OK") {
@@ -75,7 +76,7 @@ namespace http
         1000
       )->sync(
         [this, done_callback](bool err, Runner* r) {
-          done_callback(tmp_err);
+          done_callback(tmp_err, tmp_status);
           requesting = false;
           return NOP;
         }
@@ -87,7 +88,7 @@ namespace http
 
   Http http_obj;
   
-  void rqGet(const String& str, std::function<void(bool)> done_callback)
+  void rqGet(const String& str, std::function<void(bool, int)> done_callback)
   {
     return http_obj.rqGet(str, done_callback);
   }

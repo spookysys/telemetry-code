@@ -302,7 +302,7 @@ namespace gsm
   
     void maintainConnection()
     {
-      if (!gprs_status || maintainConnectionRunning) return;
+      if (/*!gprs_status || */maintainConnectionRunning) return;
       logger.println("Connection Maintenance");
       maintainConnectionRunning = true;
       
@@ -344,11 +344,12 @@ namespace gsm
       )->sync(
         [this](bool failed, Runner* r) {
           maintainConnectionRunning = false;
-          if (failed || !gprs_status) {
+          if (failed) {
             logger.println("Failed to connect.");
             connectionFailed();
           } else {
             logger.println("Connected.");
+            gprs_status = true;
             connected = true;
           }
           return NOP;
