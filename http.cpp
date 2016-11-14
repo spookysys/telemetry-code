@@ -6,22 +6,22 @@ namespace http
 {
   Logger& logger = logging::get("gsm");
 
-  
   class Http
   {
   public:
-    int rqs_in_progress = 0;
+    bool rq_in_progress = false;
 
-    int getNumRqsInProgress()
+    bool isRqInProgress()
     {
-      return rqs_in_progress;
+      return rq_in_progress;
     }
 
-    bool get(const String& url, std::function<void(bool)> done_callback)
+    bool tmp_rq_err;
+    bool rqGet(const String& url, std::function<void(bool)> done_callback)
     {
       if (!gsm::isConnected()) return false;
 
-      rqs_in_progress++;
+      this->rq_in_progress = true;
       
       gsm::runner()->then(
         "AT+HTTPINIT", 
@@ -41,20 +41,19 @@ namespace http
           logger.println(String("message: ") + msg);
         }
       )->finally(
-        [this, done_callback](bool main_err, gsm::Runner* r) {
-          r->then(
-            "AT+HTTPTERM", 
-            1000
-          )->finally(
-            [this, done_callback, main_err](bool err, gsm::Runner* r) {
-              err = err || main_err;
-              if (err) gsm::connectionFailed();
-              if (done_callback) done_callback(main_err);
-              rqs_in_progress--;
-              return main_err;
-            }
-          );
-          return false;
+        [this, done_callback](bool err, gsm::Runner* r) { 
+          tmp_rq_err = err;
+          return false; 
+        }
+      )->then(
+        "AT+HTTPTERM", 
+        1000
+      )->finally(
+        [this, done_callback](bool err, gsm::Runner* r) {
+          err = err || tmp_rq_err;
+          this->rq_in_progress = false;
+          done_callback(err);
+          return err;
         }
       );
         
@@ -66,14 +65,14 @@ namespace http
 
   Http http_obj;
   
-  bool get(const String& str, std::function<void(bool)> done_callback)
+  bool rqGet(const String& str, std::function<void(bool)> done_callback)
   {
-    return http_obj.get(str, done_callback);
+    return http_obj.rqGet(str, done_callback);
   }
 
-  int getNumRqsInProgress()
+  int isRqInProgress()
   {
-    return http_obj.getNumRqsInProgress();
+    return http_obj.isRqInProgress();
   }
 }
 

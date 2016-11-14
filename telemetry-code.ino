@@ -49,8 +49,8 @@ void every_10s(unsigned long timestamp)
 
   String url = inputUrl + "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
   if (gps_data.fix!=0) url += String("") + "&fix=" + String(gps_data.fix) + "&altitude=" + gps_data.altitude + "&latitude=" + gps_data.latitude + "&longitude=" + gps_data.longitude + "&accuracy=" + gps_data.accuracy;
-  if (gsm::isConnected() && http::getNumRqsInProgress()==0) {
-    http::get(
+  if (gsm::isConnected() && !http::isRqInProgress()) {
+    http::rqGet(
       url, 
       [](bool err) { 
         logger.println(String("get returned with ") + err);

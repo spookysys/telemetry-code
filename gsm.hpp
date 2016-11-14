@@ -30,9 +30,9 @@ namespace gsm
     {
       return thenGeneral(makeCommandTask(cmd, timeout, message_handler, done_handler));
     }
-    void finally(std::function<bool(bool err, Runner*)> finally_handler)
+    Runner* finally(std::function<bool(bool err, Runner*)> finally_handler)
     {
-      thenGeneral(makeFinallyTask(finally_handler));
+      return thenGeneral(makeFinallyTask(finally_handler));
     }
   };
 

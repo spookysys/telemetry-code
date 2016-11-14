@@ -21,10 +21,6 @@ namespace gsm
     virtual Runner* thenGeneral(Task* then_task);
   public:
     InitialRunnerImpl(std::function<void(Task*)> enqueue_func) : enqueue(enqueue_func) {}
-    void fail() 
-    { 
-      assert(0); 
-    }
   };
 
   class CommandTask;
@@ -96,17 +92,14 @@ namespace gsm
     task.next = next;
 
     if (old_next) {
-      assert(next->type==Task::TYPE_COMMAND);
-      CommandTask* iter = (CommandTask*)next;
+      Task* iter = (CommandTask*)next;
       while (iter->next) {
-        assert(iter->next->type==Task::TYPE_COMMAND);
-        iter = (CommandTask*)iter->next;
+        iter = (Task*)iter->next;
       }
       iter->next = old_next;
     }
     
-    if (next->type==Task::TYPE_COMMAND) return &((CommandTask*)next)->runner;
-    else return nullptr;
+    return &next->runner;
   }
 
     
