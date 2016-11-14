@@ -7,15 +7,10 @@
 #include "http.hpp"
 
 
-// data.sparkfun setup
-static const String publicKey = "roMd2jR96OTpEAb4jG1y";
-static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
-static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?private_key="+privateKey;
 
 
 namespace {
   Logger& logger = logging::get("main");
-  
   
   float readBatteryVoltage()
   {
@@ -23,9 +18,16 @@ namespace {
     static const float ref_volt = 3.0f;
     return analogRead(VBAT_PIN) * (ref_volt * 2.f / 1024.f);
   }
-  
-
 }
+
+
+
+// data.sparkfun setup
+static const String publicKey = "roMd2jR96OTpEAb4jG1y";
+static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
+static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?private_key="+privateKey;
+
+
 
 
 void setup() {

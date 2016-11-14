@@ -2,6 +2,7 @@
 #include "logging.hpp"
 #include "MySerial.hpp"
 #include <functional>
+#include <cstring>
 
 namespace gps 
 {
@@ -101,16 +102,42 @@ namespace gps
         else iter = str.substring(l_idx, r_idx);
       }
     }
-
-    static String parseNmeaCoord(String coord, const String& dir)
+    
+    
+    static const String parseNmeaCoord(const String& coord, const String& dir)
     {
       int dot_pos = coord.indexOf('.');
       if (dot_pos<0) return "NaN";
-      int minutes = coord.substring(0,2).toInt();
-      int seconds_integer = coord.substring(2, dot_pos).toInt();
-      int seconds_fraction = coord.substring(dot_pos+1).toInt();
-      return String(minutes*60+seconds_integer)+"."+String(seconds_fraction);
+      
+      bool neg = 0;
+      if (dir=="N" ) neg = false;
+      else if (dir=="S") neg = true;
+      else if (dir=="E") neg = false;
+      else if (dir=="W") neg = true;
+      else return dir;
+    
+      unsigned long degrees = coord.substring(0, dot_pos-2).toInt();
+      unsigned long minutes_int  = coord.substring(dot_pos-2, dot_pos).toInt();
+      unsigned long minutes_frac = coord.substring(dot_pos+1, dot_pos+5).toInt();
+    
+      unsigned long decimal_contribution = minutes_int*(100005/6) + (minutes_frac*10)/6;
+    
+      int part_decimal = (decimal_contribution % 1000000);
+      int part_integer = degrees + (decimal_contribution / 1000000);
+      if (neg) part_integer = -part_integer;
+    
+      char buff[7] = "000000";
+      String part_decimal_s(part_decimal);
+      logger.println("_");
+      logger.println(String(buff));
+      logger.println(String(part_decimal_s));
+      int len = part_decimal_s.length();
+      std::strncpy(buff + 6 - len, part_decimal_s.c_str(), len);
+      logger.println(String(buff));
+    
+      return String(part_integer) + "." + String(buff);
     }
+
 
     bool unsolicitedMessageHandler(const String& msg)
     {
@@ -160,6 +187,7 @@ namespace gps
         }
       }
     }      
+
     
     void prime(const String& lon /*10.418731*/, const String& lat /*63.415344*/, String date /*2016/11/13*/, String time_utc /*16:56:23*/)
     {
