@@ -8,10 +8,6 @@
 //#define APN_USER "lmno"
 //#define APN_PW "plus"
 
-// data.sparkfun setup
-static const String publicKey = "roMd2jR96OTpEAb4jG1y";
-static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
-static const String inputUrl = "http://data.sparkfun.com/input/roMd2jR96OTpEAb4jG1y";
 
 
 namespace gsm
@@ -195,7 +191,7 @@ namespace gsm
         Task* next = task->next;
         err = ((FinallyTask*)task)->finally_handler(err, &task->runner);
         delete task;
-        if (err) logger.println(String("Finally-handler returned error"));
+        //if (err) logger.println(String("Finally-handler returned error"));
         return startTask(next, err);
       }
     }
@@ -203,12 +199,12 @@ namespace gsm
     void finishTask(bool err)
     {
       assert(current_task);
-      if (err) logger.println(String("CommandTask returned error: \"") + current_task->cmd + "\"");
+      //if (err) logger.println(String("Task returned error: \"") + current_task->cmd + "\"");
       Task* next = current_task->next;
       delete current_task;
       current_task = nullptr;
       err = startTask(next, err);
-      if (err) logger.println("Task-chain returned error");
+      //if (err) logger.println("Task-chain returned error");
     }
     
 
@@ -294,14 +290,6 @@ namespace gsm
     }
       
 
-    void connectionFailed()
-    {
-      if (connected) logger.println("Disconnected");
-      connected = false;
-      connect_countdown = 0;
-      if (gprs_status) scheduleReconnect();
-    }
-
     long tmp_signal_strength = 0;
     bool tmp_bearer_status = false;
     bool tmp_msg_error = false;
@@ -368,7 +356,7 @@ namespace gsm
           } else {
             logger.println("Connected.");
             connected = true;
-            scheduleReconnect();
+            //scheduleReconnect();
             return false; // !err
           }
         }
@@ -414,7 +402,15 @@ namespace gsm
 
       
   public:
-  
+
+    void connectionFailed()
+    {
+      if (connected) logger.println("Disconnected");
+      connected = false;
+      connect_countdown = 0;
+      if (gprs_status) scheduleReconnect();
+    }
+      
     void beginL2(gps_priming_fn_t gps_priming_callback) 
     {
       this->beginL1();
@@ -453,11 +449,16 @@ namespace gsm
     void update(unsigned long timestamp, unsigned long delta)
     {
       updateL2(timestamp, delta);
+
+      while (Serial.available()) {
+        serial.write(Serial.read());
+      }
     }
 
     using GsmLayer1::runner;
     using GsmLayer0::IrqHandler;
     using GsmLayer2::isConnected;
+    using GsmLayer2::connectionFailed;
   };
 
 
@@ -481,6 +482,11 @@ namespace gsm
   bool isConnected()
   {
     return gsm_obj.isConnected();
+  }
+
+  void connectionFailed()
+  {
+    gsm_obj.connectionFailed();
   }
   
   Runner* runner()

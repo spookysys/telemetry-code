@@ -129,8 +129,8 @@ namespace gps
         std::array<String, 11> toks;
         tokenizeNmea(msg, toks);
         gps_data.fix = (toks[6].length()>0) ? toks[6].toInt() : 0;
-        gps_data.lat = parseNmeaCoord(toks[2], toks[3]);
-        gps_data.lon = parseNmeaCoord(toks[4], toks[5]);
+        gps_data.latitude = parseNmeaCoord(toks[2], toks[3]);
+        gps_data.longitude = parseNmeaCoord(toks[4], toks[5]);
         gps_data.altitude = (toks[10]=="M" && toks[9].length()>0) ? toks[9] : "NaN";
       } else if (sss=="ACCURACY") { // Accuracy
         std::array<String, 2> toks;

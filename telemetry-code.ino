@@ -4,6 +4,14 @@
 #include "simcom.hpp"
 #include "gps.hpp"
 #include "gsm.hpp"
+#include "http.hpp"
+
+
+// data.sparkfun setup
+static const String publicKey = "roMd2jR96OTpEAb4jG1y";
+static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
+static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?privateKey="+privateKey;
+
 
 namespace {
   Logger& logger = logging::get("main");
@@ -31,16 +39,25 @@ void setup() {
 }
 
 
+
 // called every 10 seconds
 void every_10s(unsigned long timestamp)
 {
   logger.println("10s");
 
-
-  logger.println(String("Free RAM: ") + String(freeRam()) + " Voltage: " + String(readBatteryVoltage()));  
-
   gps::GpsData gps_data = gps::get();
-  logger.println(String("lat:")+gps_data.lat+" lon:"+gps_data.lon+" alt:"+gps_data.altitude+" fix:" + String(gps_data.fix) + " accuracy: "+gps_data.accuracy);    
+
+  String url = inputUrl + "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
+  if (gps_data.fix!=0) url += String("") + "&fix=" + String(gps_data.fix) + "&altitude=" + gps_data.altitude + "&latitude=" + gps_data.latitude + "&longitude=" + gps_data.longitude + "&accuracy=" + gps_data.accuracy;
+  if (gsm::isConnected() && http::getNumRqsInProgress()==0) {
+    http::get(
+      url, 
+      [](bool err) { 
+        logger.println(String("get returned with ") + err);
+      }
+    );
+  }
+  
 }
 
 

@@ -6,8 +6,8 @@ namespace gps
   struct GpsData
   {
     int    fix = 0;
-    String lat;
-    String lon;
+    String latitude;
+    String longitude;
     String altitude;
     String accuracy;
   };

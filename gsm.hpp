@@ -10,6 +10,7 @@ namespace gsm
   void update(unsigned long timestamp, unsigned long delta);
 
   bool isConnected();
+  void connectionFailed();
   
 
   static const int default_timeout = 1000;
