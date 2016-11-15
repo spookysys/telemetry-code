@@ -26,6 +26,9 @@ static const String publicKey = "roMd2jR96OTpEAb4jG1y";
 static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
 static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?private_key="+privateKey;
 
+// how long do we accept not having uploaded any telemetry before we reboot
+static unsigned long first_send_deadline = 65000;
+static unsigned long silence_deadline = 35000;
 
 
 
@@ -40,29 +43,28 @@ void setup() {
   simcom::begin();
 }
 
-
-void sendData(unsigned long timestamp)
+static unsigned long last_send_timestamp = 0;
+static void sendData(unsigned long timestamp)
 {
-  int seconds = timestamp / 1000;
   
   gps::GpsData gps_data = gps::get();
 
   // generate string
   String url = inputUrl;
-  url += "&seconds=" + String(seconds);
+  url += "&seconds=" + String(timestamp / 1000);
   url += "&voltage=" + String(readBatteryVoltage()) + "&free_ram=" + String(freeRam());
   url += String("") + "&gps_fix=" + String(gps_data.fix) + "&gps_altitude=" + gps_data.altitude + "&gps_latitude=" + gps_data.latitude + "&gps_longitude=" + gps_data.longitude + "&gps_accuracy=" + gps_data.accuracy;
-  url += "&log=";
  
   // upload
   if (gsm::isConnected() && !http::isRequesting()) {
     http::rqGet(
       url, 
-      [seconds](bool err, int status) { 
+      [timestamp](bool err, int status) { 
         if (!err && (status==200 || status==201 || status==202)) {
-          logger.println(String("Logged with status ") + String(status) + " at " + String(seconds) + "s");
+          logger.println(String("Logged with status ") + String(status) + " at " + String(timestamp/1000) + "s");
+          last_send_timestamp = timestamp;
         } else {
-          logger.println(String("Logging failed with status ") + String(status) + " at " + String(seconds) + "s");
+          logger.println(String("Logging failed with status ") + String(status) + " at " + String(timestamp/1000) + "s");
         }
       }
     );
@@ -97,15 +99,25 @@ void every_1s(unsigned long timestamp)
 // called every 10th second
 void every_10th_s(unsigned long timestamp)
 {
-  watchdog::tickle();
+
 }
 
 
+
 void every(unsigned long timestamp, unsigned long delta)
-{  
+{ 
+  // update everything
   simcom::update(timestamp, delta);
 
-  delay(100); // thus, in practice every_10th is ~ the same as this
+  // keep watchdog timer happy
+  watchdog::tickle();
+
+  // reboot if not sending telemetry
+  if (last_send_timestamp==0 && timestamp > first_send_deadline) watchdog::reboot();
+  if (last_send_timestamp!=0 && timestamp-last_send_timestamp > silence_deadline) watchdog::reboot();
+
+  // thus, in practice every_10th is ~ the same as this
+  delay(100); 
 }
 
 

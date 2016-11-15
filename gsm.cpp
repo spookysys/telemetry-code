@@ -181,8 +181,8 @@ namespace gsm
         delete task;
         startTask(next, true);
       } else if (task->type==Task::TYPE_SYNC) {
-        Task* next = task->next;
         Result res = ((SyncTask*)task)->handler(failed, &task->runner);
+        Task* next = task->next;
         delete task;
         if (res==NOP) startTask(next, failed);
         else if (res==OK) startTask(next, false);
@@ -316,35 +316,17 @@ namespace gsm
       logger.println("Connection Maintenance");
       maintainConnectionRunning = true;
       
-      runner()->then(
+      runner()->then( // check signal and whether we need to set up bearer profile
         "AT+CSQ;+SAPBR=2,1", 10000, 
         [this](const String& msg, Runner* r) {
-          if (msg.startsWith("+CSQ:")) {
+          if (msg.startsWith("+CSQ:")) { // remember signal strength until we receive "OK"
             signal_strength = msg.substring(6, msg.indexOf(',')).toInt();
           }
           else if (msg.startsWith("+SAPBR:")) {
             std::array<String, 2> toks;
             tokenize(msg, toks);
-            logger.println(String("Bearer status: ") + toks[1]);
-            if (toks[1]!="1")
-            {
-              r = r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000);
-              if (gps_priming_callback) {
-                r = r->then(
-                  "AT+CIPGSMLOC=1,1", 20000,
-                  [this](const String& msg, Runner* r) {
-                    if (msg.startsWith("+CIPGSMLOC")) {
-                      std::array<String, 5> toks;
-                      tokenize(msg, toks);
-                      gps_priming_callback(toks[1], toks[2], toks[3], toks[4]);
-                      gps_priming_callback = nullptr;
-                    } 
-                    else if (msg=="OK") return OK;
-                    else if (msg=="ERROR") return ERROR;
-                    return NOP;
-                  }
-                );
-              }
+            if (toks[1]!="1") { // we need to set up bearer profile, so attach this task
+              r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000);
             }
           }
           else if (msg=="OK" && signal_strength<=1) {
@@ -355,18 +337,40 @@ namespace gsm
           else if (msg=="ERROR") return ERROR;
           return NOP;
         }
-      )->sync(
+      )->sync( // conclude on whether we managed to connect
         [this](bool failed, Runner* r) {
           maintainConnectionRunning = false;
           if (failed) {
             logger.println("Failed to connect.");
             connectionFailed();
+            return ERROR;
           } else {
             logger.println("Connected.");
             gprs_status = true;
             connected = true;
+            return OK;
           }
-          return NOP;
+        }
+      )->sync( // prime GPS on successful connection
+        [this](bool failed, Runner* r) {
+          if (!failed && gps_priming_callback) {
+            logger.println("Requesting GSM location and time");
+            r->then(
+              "AT+CIPGSMLOC=1,1", 20000,
+              [this](const String& msg, Runner* r) {
+                if (msg.startsWith("+CIPGSMLOC")) {
+                  std::array<String, 5> toks;
+                  tokenize(msg, toks);
+                  gps_priming_callback(toks[1], toks[2], toks[3], toks[4]);
+                  gps_priming_callback = nullptr;
+                } 
+                else if (msg=="OK") return OK;
+                else if (msg=="ERROR") return ERROR;
+                return NOP;
+              }
+            );
+          }
+          return NOP;            
         }
       );
     }
