@@ -2,6 +2,7 @@
 #include "logging.hpp"
 #include "gsm.hpp"
 #include "gps.hpp"
+#include "watchdog.hpp"
 
 namespace simcom
 {
@@ -25,9 +26,13 @@ namespace simcom
     }
     pinMode(PIN_PWRKEY, OUTPUT);
     digitalWrite(PIN_PWRKEY, LOW);
-    delay(1000);
+    for (int i=0; i<10; i++) {
+      delay(100);
+      watchdog::tickle();
+    }
     for (int i = 0; i <= 100; i++) {
       delay(100);
+      watchdog::tickle();
       if (isOn() != startStatus) break;
       assert(i < 100);
     }
@@ -54,7 +59,10 @@ namespace simcom
     if (isOn()) {
       powerOnOff();
       assert(!isOn());
-      delay(800);
+      for (int i=0; i<8; i++) {
+        delay(100);
+        watchdog::tickle();
+      }
       assert(!isOn());
     }
   

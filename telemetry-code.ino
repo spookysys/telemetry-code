@@ -5,8 +5,7 @@
 #include "gps.hpp"
 #include "gsm.hpp"
 #include "http.hpp"
-
-
+#include "watchdog.hpp"
 
 
 namespace {
@@ -34,7 +33,8 @@ void setup() {
 
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
-  
+
+  watchdog::begin();
   logging::begin();
   logger.println("Hey there!");
   simcom::begin();
@@ -97,7 +97,7 @@ void every_1s(unsigned long timestamp)
 // called every 10th second
 void every_10th_s(unsigned long timestamp)
 {
-  
+  watchdog::tickle();
 }
 
 

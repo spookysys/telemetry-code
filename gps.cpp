@@ -1,6 +1,7 @@
 #include "gps.hpp"
 #include "logging.hpp"
 #include "MySerial.hpp"
+#include "watchdog.hpp"
 #include <functional>
 #include <cstring>
 
@@ -16,8 +17,9 @@ namespace gps
     void beginL0() 
     {
       logger.println("Opening serial");
+      watchdog::tickle();
       serial.begin(115200, 31ul/*PB23 SERCOM5.3 RX<-GPS_TX */, 30ul/*PB22 SERCOM5.2 TX->GPS_RX*/, PIO_SERCOM_ALT, PIO_SERCOM_ALT, SERCOM_RX_PAD_3, UART_TX_PAD_2, &sercom5);
-    
+      watchdog::tickle();
     }    
     void updateL0() {}
 
@@ -71,8 +73,10 @@ namespace gps
       for (int attempt_i = 0; attempt_i<attempts; attempt_i++)
       {
         serial.println(command + "*" + String(checksum, HEX));
+        watchdog::tickle();
         for (int i=0; i<timeout/100; i++) {
           delay(100);
+          watchdog::tickle();
           while (serial.hasString()) {
             String rsp = serial.popString();
             if (rsp_handler(rsp)) {
@@ -83,6 +87,7 @@ namespace gps
             } else {
               logger.println(String("Unknown response: \"") + rsp + "\"");
             }
+            watchdog::tickle();
           }
         }
       }

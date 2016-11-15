@@ -1,6 +1,7 @@
 #include "gsm.hpp"
 #include "logging.hpp"
 #include "MySerial.hpp"
+#include "watchdog.hpp"
 #include <queue>
 
 // APN setup
@@ -122,12 +123,15 @@ namespace gsm
     void beginL0() 
     {
       logger.println("Opening serial");
+      watchdog::tickle();
       serial.begin_hs(38400, 3ul/*PA09 SERCOM2.1 RX<-GSM_TX */, 4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
+      watchdog::tickle();
     
       logger.println("Detecting baud");
       serial.setTimeout(100);
       for (int i = 0; i <= 10; i++) {
         serial.println("AT");
+        watchdog::tickle();
         if (serial.find("OK\r")) break;
         assert(i < 10);
       }
@@ -140,10 +144,12 @@ namespace gsm
       for (int i = 0; i <= 20; i++) {
         serial.println("AT+IFC=2,2;E0;+CGREG=1");
         if (serial.find("OK\r")) break;
+        watchdog::tickle();
         assert(i < 10);
       }
       serial.setTimeout(1000);
-      logger.println();      
+      logger.println();
+      watchdog::tickle();
     }    
 
     void updateL0() {}
@@ -272,6 +278,7 @@ namespace gsm
         "RECV FROM:", "+IPD,", "+RECEIVE,", "REMOTE IP:", "+CDNSGIP:", "+PDP: DEACT", /*"+SAPBR",*/
         /*"+HTTPACTION:",*/ "+FTP", /*"+CGREG:",*/ "ALARM RING", "+CALV:"
       };
+
       
       if (msg.startsWith("+CGREG: ")) {
         int status = msg.substring(8, 9).toInt();
@@ -299,10 +306,13 @@ namespace gsm
     bool maintainConnectionRunning = false;
     long signal_strength = 0;
   public:
+
+    bool isMaintainConnectionRunning() {
+      return maintainConnectionRunning;
+    }
   
     void maintainConnection()
     {
-      if (/*!gprs_status || */maintainConnectionRunning) return;
       logger.println("Connection Maintenance");
       maintainConnectionRunning = true;
       
@@ -337,8 +347,12 @@ namespace gsm
               }
             }
           }
-          else if (msg=="OK" && signal_strength>1) return OK;
-          else if (msg=="OK" || msg=="ERROR") return ERROR;
+          else if (msg=="OK" && signal_strength<=1) {
+            logger.println("No signal");
+            return ERROR;
+          }
+          else if (msg=="OK") return OK;
+          else if (msg=="ERROR") return ERROR;
           return NOP;
         }
       )->sync(
@@ -399,6 +413,7 @@ namespace gsm
     using GsmLayer2::isConnected;
     using GsmLayer2::connectionFailed;
     using GsmLayer2::maintainConnection;
+    using GsmLayer2::isMaintainConnectionRunning;
   };
 
 
@@ -431,7 +446,7 @@ namespace gsm
 
   void maintainConnection()
   {
-    gsm_obj.maintainConnection();
+    if (!gsm_obj.isMaintainConnectionRunning()) gsm_obj.maintainConnection();
   }
   
   Runner* runner()

@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <vector>
 #include <memory>
+#include "watchdog.hpp"
 
 namespace logging
 {
@@ -13,6 +14,7 @@ namespace logging
     Serial.begin(74880);
     for (int i = 0; i<40 && !Serial; i++) {
       delay(100);
+      watchdog::tickle();
     }
     serial_open = Serial;
   }
