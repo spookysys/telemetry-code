@@ -128,12 +128,8 @@ namespace gps
     
       char buff[7] = "000000";
       String part_decimal_s(part_decimal);
-      logger.println("_");
-      logger.println(String(buff));
-      logger.println(String(part_decimal_s));
       int len = part_decimal_s.length();
       std::strncpy(buff + 6 - len, part_decimal_s.c_str(), len);
-      logger.println(String(buff));
     
       return String(part_integer) + "." + String(buff);
     }
@@ -193,7 +189,7 @@ namespace gps
     {
       //$PMTK741,Lat,Long,Alt,YYYY,MM,DD,hh,mm,ss *CS<CR><LF>
 
-      int default_altitude = 0;
+      int default_altitude = 50;
       
       // replace separators with ','
       for (int i=0; i<date.length(); i++) {
