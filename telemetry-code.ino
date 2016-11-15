@@ -61,10 +61,13 @@ static void sendData(unsigned long timestamp)
       url, 
       [timestamp](bool err, int status) { 
         if (!err && (status==200 || status==201 || status==202)) {
-          logger.println(String("Logged with status ") + String(status) + " at " + String(timestamp/1000) + "s");
+          logger.println(String("Uploaded telemetry at ") + String(timestamp/1000) + "s");
           last_send_timestamp = timestamp;
+        } else if (!err) {
+          logger.println(String("Upload failed with status ") + String(status) + " at " + String(timestamp/1000) + "s");
         } else {
-          logger.println(String("Logging failed with status ") + String(status) + " at " + String(timestamp/1000) + "s");
+          logger.println(String("Upload failed at ") + String(timestamp/1000) + "s");
+          gsm::connectionFailed();
         }
       }
     );
