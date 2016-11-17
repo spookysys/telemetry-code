@@ -1,5 +1,6 @@
 #include "common.hpp"
 #include "logging.hpp"
+#include "watchdog.hpp"
 
 namespace {
   Logger& logger = logging::get("common");
@@ -12,6 +13,14 @@ void assert_handler(const char* expr, const char* file, int line)
   logger.println(String("Assertion failed: ") + expr + " in " + file + ":" + String(line));
   logger.println();
   logger.flush();
+
+  // blink quickly so you can see that there's an error in the field
+  for (int i=0; i<20; i++)
+  {
+    digitalWrite(PIN_LED, i&1);
+    delay(100);
+    watchdog::tickle();
+  }
  
   //interrupts();
   #ifdef DEBUG

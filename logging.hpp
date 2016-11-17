@@ -1,5 +1,6 @@
 #pragma once
 #include "common.hpp"
+#include <SD.h>
 
 class Logger {
 public:
@@ -12,11 +13,11 @@ public:
   virtual void flush() = 0;
 };
 
-
 namespace logging
 {
   void begin();
   Logger& get(const String& id);
+  void setLogfile(File* file);
 }
 
 

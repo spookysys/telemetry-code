@@ -80,9 +80,8 @@ namespace gps
           while (serial.hasString()) {
             String rsp = serial.popString();
             if (rsp_handler(rsp)) {
-              logger.println("OK");
               return true;
-            } else if (unsolicitedMessageHandler(rsp)) {
+            } else if (unsolicitedMessageHandler(0, rsp)) {
               // it was an unrelated message; go on
             } else {
               logger.println(String("Unknown response: \"") + rsp + "\"");
@@ -140,7 +139,7 @@ namespace gps
     }
 
 
-    bool unsolicitedMessageHandler(const String& msg)
+    bool unsolicitedMessageHandler(unsigned long timestamp, const String& msg)
     {
       if (msg[0]!='$') return false; // not a command
       if (msg[1]!='G') return false; // unknown talker
@@ -148,6 +147,7 @@ namespace gps
       int idx_r = msg.indexOf(',', idx_l);
       String sss = msg.substring(idx_l, idx_r);
       if (sss=="GGA") { // Global Positioning System Fix Data. Time, Position and fix related data for a GPS receive
+        gps_data.gga_time = timestamp;
         std::array<String, 11> toks;
         tokenizeNmea(msg, toks);
         gps_data.fix = (toks[6].length()>0) ? toks[6].toInt() : 0;
@@ -155,6 +155,7 @@ namespace gps
         gps_data.longitude = parseNmeaCoord(toks[4], toks[5]);
         gps_data.altitude = (toks[10]=="M" && toks[9].length()>0) ? toks[9] : "NaN";
       } else if (sss=="ACCURACY") { // Accuracy
+        gps_data.accuracy_time = timestamp;
         std::array<String, 2> toks;
         tokenizeNmea(msg, toks);
         gps_data.accuracy = toks[1];
@@ -183,7 +184,7 @@ namespace gps
       
       while (serial.hasString()) {
         String str = serial.popString();
-        if (!unsolicitedMessageHandler(str)) {
+        if (!unsolicitedMessageHandler(timestamp, str)) {
           logger.println(String("Unhandled message: \"") + str + "\"");
         }
       }

@@ -5,10 +5,13 @@ namespace gps
 {
   struct GpsData
   {
+    unsigned long gga_time = 0;
     int    fix = 0;
     String latitude;
     String longitude;
     String altitude;
+    
+    unsigned long accuracy_time = 0;
     String accuracy;
   };
   

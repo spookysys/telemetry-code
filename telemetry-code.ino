@@ -6,6 +6,7 @@
 #include "gsm.hpp"
 #include "http.hpp"
 #include "watchdog.hpp"
+#include "flashlog.hpp"
 
 
 namespace {
@@ -27,8 +28,8 @@ static const String privateKey = "jk9NvjPKE6Ug1rq0P6NY";
 static const String inputUrl = "http://data.sparkfun.com/input/"+publicKey+"?private_key="+privateKey;
 
 // how long do we accept not having uploaded any telemetry before we reboot
-static unsigned long first_send_deadline = 65000;
-static unsigned long silence_deadline = 35000;
+static unsigned long first_send_deadline = 125000;
+static unsigned long silence_deadline = 65000;
 
 
 
@@ -39,8 +40,11 @@ void setup() {
 
   watchdog::begin();
   logging::begin();
+  flashlog::begin();
   logger.println("Hey there!");
   simcom::begin();
+
+  flashlog::gpsFile()->println("logtime,gga_time,fix,latitude,longitude,altitude,accuracy_time,accuracy");
 }
 
 static unsigned long last_send_timestamp = 0;
@@ -87,6 +91,9 @@ void every_30s(unsigned long timestamp)
 void every_10s(unsigned long timestamp)
 {
   sendData(timestamp);  
+  logger.println("Flushing flash..");
+  flashlog::flush();
+  logger.println("done.");
 }
 
 
@@ -96,13 +103,17 @@ void every_1s(unsigned long timestamp)
   static bool led_val = false;
   digitalWrite(PIN_LED, led_val);
   led_val = !led_val;
+
+  const gps::GpsData& gps_data = gps::get();
+  flashlog::gpsFile()->println(String(timestamp) + "," + String(gps_data.gga_time) + "," + String(gps_data.fix) + "," + gps_data.latitude + "," + gps_data.longitude + "," + gps_data.altitude + "," + gps_data.accuracy_time + "," + gps_data.accuracy);
 }
 
 
 // called every 10th second
 void every_10th_s(unsigned long timestamp)
 {
-
+  // keep watchdog timer happy
+  watchdog::tickle();
 }
 
 
@@ -112,15 +123,12 @@ void every(unsigned long timestamp, unsigned long delta)
   // update everything
   simcom::update(timestamp, delta);
 
-  // keep watchdog timer happy
-  watchdog::tickle();
-
   // reboot if not sending telemetry
   if (last_send_timestamp==0 && timestamp > first_send_deadline) watchdog::reboot();
   if (last_send_timestamp!=0 && timestamp-last_send_timestamp > silence_deadline) watchdog::reboot();
 
-  // thus, in practice every_10th is ~ the same as this
-  delay(100); 
+  // short delay
+  delay(10); 
 }
 
 

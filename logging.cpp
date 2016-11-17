@@ -1,4 +1,5 @@
 #include "logging.hpp"
+#include <SD.h>
 #include <algorithm>
 #include <vector>
 #include <memory>
@@ -6,12 +7,13 @@
 
 namespace logging
 {
+  File* logfile = nullptr;
   bool serial_open = false;
 
   void begin()
   {
     // try bring up serial for 4 sec
-    Serial.begin(74880);
+    Serial.begin(115200);
     for (int i = 0; i<40 && !Serial; i++) {
       delay(100);
       watchdog::tickle();
@@ -45,6 +47,12 @@ namespace logging
         Serial.print(buff);
         Serial.println("\\");
       }
+      if (logfile) {
+        logfile->print(id);
+        logfile->print("> ");
+        logfile->print(buff);
+        logfile->println("\\");
+      }      
       buff_idx = 0;
       buff[0] = 0;
     }
@@ -55,6 +63,11 @@ namespace logging
         Serial.print(id);
         Serial.print("> ");
         Serial.println(buff);
+      }
+      if (logfile) {
+        logfile->print(id);
+        logfile->print("> ");
+        logfile->println(buff);
       }
       buff_idx = 0;
       buff[0] = 0;
@@ -88,6 +101,7 @@ namespace logging
     {
       if (buff_idx) println();
       if (serial_open) Serial.flush();
+      if (logfile) logfile->flush();
     }
 
 
@@ -99,6 +113,13 @@ namespace logging
       if ((*iter)->id == id) return **iter;
     logger_pool.emplace_back(std::unique_ptr<LoggerImpl>(new LoggerImpl(id)));
     return *logger_pool.back();
+  }
+
+
+  void setLogfile(File* file)
+  {
+    logfile = file;
+    logfile->println("Logger attached");
   }
 }
 
