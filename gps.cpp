@@ -45,6 +45,7 @@ namespace gps
         1000
       )) logger.println("Warning: Failed to activate aviation mode");
       logger.println();
+      watchdog::tickle();
 
       logger.println("Enabling fast TTF when out of tunnel mode");
       if (!run(
@@ -55,6 +56,7 @@ namespace gps
         1000
       )) logger.println("Warning: Failed to activate fast TTG when out of tunnel mode");
       logger.println();
+      watchdog::tickle();
     }
 
     const GpsData& get() 

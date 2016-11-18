@@ -39,7 +39,7 @@ namespace logging
   public:
     LoggerImpl(const String& id) : Logger(id) { buff[0] = 0; }
 
-    void linebreak() 
+    void wrap() 
     {
       if (serial_open) {
         Serial.print(id);
@@ -57,7 +57,7 @@ namespace logging
       buff[0] = 0;
     }
 
-    void println()
+    void linebreak()
     {
       if (serial_open) {
         Serial.print(id);
@@ -74,28 +74,27 @@ namespace logging
     }
 
     char prev_nl = 0;
-    void write(char ch)
+    size_t write(uint8_t ch)
     {
       if (ch=='\n' || ch=='\r') {
-        if (!(ch=='\n' && prev_nl=='\r')) println();
+        if (!(ch=='\n' && prev_nl=='\r')) linebreak();
         prev_nl = ch;
       } else {
         buff[buff_idx++] = ch;
         buff[buff_idx] = 0;
         prev_nl = 0;
-        if (buff_idx==buff_len) linebreak();
+        if (buff_idx==buff_len) wrap();
       }
+      return 1;
     }
 
-    void print(const String& op)
+
+    size_t write(const uint8_t *buffer, size_t size)
     {
-      for (int i=0; i<op.length(); i++) write((char)op[i]);
+      for (int i=0; i<size; i++) write(buffer[i]);
+      return size;
     }
 
-    void println(const String& op) {
-      print(op);
-      println();
-    }
 
     void flush()
     {

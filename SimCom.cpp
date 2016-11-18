@@ -76,7 +76,9 @@ namespace simcom
 
     // GPS
     gps::begin();
+    watchdog::tickle();
   }
+  
   void update(unsigned long timestamp, unsigned long delta)
   {
     gsm::update(timestamp, delta);

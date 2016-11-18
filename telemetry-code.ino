@@ -7,7 +7,8 @@
 #include "http.hpp"
 #include "watchdog.hpp"
 #include "flashlog.hpp"
-
+#include "imu.hpp"
+#include <Wire.h>
 
 namespace {
   Logger& logger = logging::get("main");
@@ -38,13 +39,37 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
 
-  watchdog::begin();
   logging::begin();
+  logger.println("Hey there display!");
+  
   flashlog::begin();
-  logger.println("Hey there!");
-  simcom::begin();
+  logger.println("Hey there flash too!");
 
+  Wire.begin(); // Start Wire (I2C)
+  /*
+  sercom3.disableWIRE(); // Disable the I2C bus
+  SERCOM3->I2CM.BAUD.bit.BAUD = SystemCoreClock / ( 2 * 400000) - 1; // Set the I2C SCL frequency to 400kHz
+  sercom3.enableWIRE(); // Restart the I2C bus
+  */
+
+  bool imu_ok = imu::begin();
+  
+  watchdog::begin();
+
+  if (!imu_ok) {
+    logger.println("Could not initialize IMU - rebooting");
+    watchdog::reboot();
+  }
+  
+  simcom::begin();
+  
   flashlog::gpsFile()->println("logtime,gga_time,fix,latitude,longitude,altitude,accuracy_time,accuracy");
+  watchdog::tickle();
+
+  flashlog::sensorFile()->println("ax,ay,az,gx,gy,gz,mx,my,mz,q0,qx,qy,qz");
+
+  logger.println("Initialization done!");
+  watchdog::tickle();
 }
 
 static unsigned long last_send_timestamp = 0;
@@ -90,7 +115,10 @@ void every_30s(unsigned long timestamp)
 // called every 10 seconds
 void every_10s(unsigned long timestamp)
 {
-  sendData(timestamp);  
+  sendData(timestamp);
+
+  watchdog::tickle();
+ 
   logger.println("Flushing flash..");
   flashlog::flush();
   logger.println("done.");
@@ -114,6 +142,11 @@ void every_10th_s(unsigned long timestamp)
 {
   // keep watchdog timer happy
   watchdog::tickle();
+
+  imu::update();
+
+  imu::Data imu_data = imu::get();
+  flashlog::sensorFile()->println(String(imu_data.ax) + "," + String(imu_data.ay) + "," + String(imu_data.az) + "," + String(imu_data.gx) + "," + String(imu_data.gy) + "," + String(imu_data.gz) + "," + String(imu_data.mx) + "," + String(imu_data.my) + "," + String(imu_data.mz) + "," + String(imu_data.q0) + "," + String(imu_data.qx) + "," + String(imu_data.qy) + "," + String(imu_data.qz));
 }
 
 
@@ -124,8 +157,14 @@ void every(unsigned long timestamp, unsigned long delta)
   simcom::update(timestamp, delta);
 
   // reboot if not sending telemetry
-  if (last_send_timestamp==0 && timestamp > first_send_deadline) watchdog::reboot();
-  if (last_send_timestamp!=0 && timestamp-last_send_timestamp > silence_deadline) watchdog::reboot();
+  if (last_send_timestamp==0 && timestamp > first_send_deadline) {
+    logger.println("Deadline reached before first successful telemetry upload. Rebooting.");
+    watchdog::reboot();
+  }
+  if (last_send_timestamp!=0 && timestamp-last_send_timestamp > silence_deadline) {
+    logger.println("Deadline reached before next successful telemetry upload. Rebooting.");
+    watchdog::reboot();
+  }
 
   // short delay
   delay(10); 

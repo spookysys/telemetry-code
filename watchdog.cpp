@@ -49,18 +49,23 @@ namespace
 
 namespace watchdog
 {
+  bool inited = false;
+  
   void begin() {
     setupWDT( 11 ); // initialize and activate WDT with maximum period 
+    inited = true;
     tickle();
   }
   
   void tickle()
   {
-    resetWDT();
+    if (inited) resetWDT();
   }
   
   void reboot()
   {
+    logger.println("Rebooting");
+    logger.flush();
     begin();
     systemReset();    
   }

@@ -2,14 +2,12 @@
 #include "common.hpp"
 #include <SD.h>
 
-class Logger {
+class Logger : public Print {
 public:
   String id;
   Logger(const String& id) : id(id) {}
-  virtual void println() = 0;
-  virtual void println(const String& str) = 0;
-  virtual void print(const String& str) = 0;  
-  virtual void write(char ch) = 0;
+  virtual size_t write(uint8_t ch) = 0;
+  virtual size_t write(const uint8_t *buffer, size_t size) = 0;
   virtual void flush() = 0;
 };
 

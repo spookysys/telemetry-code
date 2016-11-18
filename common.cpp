@@ -8,19 +8,21 @@ namespace {
 
 void assert_handler(const char* expr, const char* file, int line)
 {
-  //noInterrupts();
-  
+  watchdog::tickle();
   logger.println(String("Assertion failed: ") + expr + " in " + file + ":" + String(line));
   logger.println();
+  watchdog::tickle();
   logger.flush();
+  watchdog::tickle();
 
   // blink quickly so you can see that there's an error in the field
   for (int i=0; i<20; i++)
   {
+    watchdog::tickle();
     digitalWrite(PIN_LED, i&1);
     delay(100);
-    watchdog::tickle();
   }
+  watchdog::tickle();
  
   //interrupts();
   #ifdef DEBUG
