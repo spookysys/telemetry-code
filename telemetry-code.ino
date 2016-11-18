@@ -66,7 +66,7 @@ void setup() {
   flashlog::gpsFile()->println("logtime,gga_time,fix,latitude,longitude,altitude,accuracy_time,accuracy");
   watchdog::tickle();
 
-  flashlog::sensorFile()->println("ax,ay,az,gx,gy,gz,mx,my,mz,q0,qx,qy,qz");
+  flashlog::sensorFile()->println("ax,ay,az,gx,gy,gz,mx,my,mz");
 
   logger.println("Initialization done!");
   watchdog::tickle();
@@ -146,7 +146,7 @@ void every_10th_s(unsigned long timestamp)
   imu::update();
 
   imu::Data imu_data = imu::get();
-  flashlog::sensorFile()->println(String(imu_data.ax) + "," + String(imu_data.ay) + "," + String(imu_data.az) + "," + String(imu_data.gx) + "," + String(imu_data.gy) + "," + String(imu_data.gz) + "," + String(imu_data.mx) + "," + String(imu_data.my) + "," + String(imu_data.mz) + "," + String(imu_data.q0) + "," + String(imu_data.qx) + "," + String(imu_data.qy) + "," + String(imu_data.qz));
+  flashlog::sensorFile()->println(String(imu_data.ax) + "," + String(imu_data.ay) + "," + String(imu_data.az) + "," + String(imu_data.gx) + "," + String(imu_data.gy) + "," + String(imu_data.gz) + "," + String(imu_data.mx) + "," + String(imu_data.my) + "," + String(imu_data.mz));
 }
 
 
