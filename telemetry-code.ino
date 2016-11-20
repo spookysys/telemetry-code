@@ -39,6 +39,9 @@ void setup() {
   pinMode(PIN_LED, OUTPUT);
   digitalWrite(PIN_LED, HIGH);
 
+
+  watchdog::begin();
+  
   logging::begin();
   logger.println("Hey there display!");
   
@@ -46,23 +49,19 @@ void setup() {
   logger.println("Hey there flash too!");
 
   Wire.begin(); // Start Wire (I2C)
-  /*
   sercom3.disableWIRE(); // Disable the I2C bus
   SERCOM3->I2CM.BAUD.bit.BAUD = SystemCoreClock / ( 2 * 400000) - 1; // Set the I2C SCL frequency to 400kHz
   sercom3.enableWIRE(); // Restart the I2C bus
-  */
 
+  watchdog::tickle();
   bool imu_ok = imu::begin();
-  
-  watchdog::begin();
-
   if (!imu_ok) {
     logger.println("Could not initialize IMU - rebooting");
     watchdog::reboot();
   }
-  
+  watchdog::tickle();
   simcom::begin();
-  
+  watchdog::tickle();
   flashlog::gpsFile()->println("logtime,gga_time,fix,latitude,longitude,altitude,accuracy_time,accuracy");
   watchdog::tickle();
 

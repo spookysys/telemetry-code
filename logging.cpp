@@ -60,14 +60,10 @@ namespace logging
     void linebreak()
     {
       if (serial_open) {
-        Serial.print(id);
-        Serial.print("> ");
-        Serial.println(buff);
+        Serial.println(String(id) + "> " + buff);
       }
       if (logfile) {
-        logfile->print(id);
-        logfile->print("> ");
-        logfile->println(buff);
+        logfile->println(String(id) + "> " + buff);
       }
       buff_idx = 0;
       buff[0] = 0;

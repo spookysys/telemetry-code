@@ -47,7 +47,6 @@ void MySerial::updateRts()
     curRts = false;
     changed = true;
   }
-
   if (changed)
     digitalWrite(pinRTS, curRts);
 }
@@ -73,7 +72,6 @@ void MySerial::IrqHandler()
     if (echo_rx) logger_rx.write(tmp);
     if (rx_buffer.is_full()) {
       if (echo_rx) logger_rx.write('§');
-      //logger.print("_rxOF_");
     } else {
       rx_buffer.push(tmp);
       updateRts();
@@ -82,11 +80,10 @@ void MySerial::IrqHandler()
   
   if (sercom->isUARTError()) {
     sercom->acknowledgeUARTError();
-    if (echo_rx) logger_rx.write('%');
-    //logger.print("_rxER_");
-    // TODO: if (sercom->isBufferOverflowErrorUART()) ....
-    // TODO: if (sercom->isFrameErrorUART()) ....
-    // TODO: if (sercom->isParityErrorUART()) ....
+    if (sercom->isBufferOverflowErrorUART()) logger_rx.print("%o");
+    else if (sercom->isFrameErrorUART()) logger_rx.print("%f");
+    else if (sercom->isParityErrorUART()) logger_rx.print("%p");
+    else logger_rx.print("%?");
     sercom->clearStatusUART();
   }
 

@@ -124,7 +124,7 @@ namespace gsm
     {
       logger.println("Opening serial");
       watchdog::tickle();
-      serial.begin_hs(115200, 3ul/*PA09 SERCOM2.1 RX<-GSM_TX */, 4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
+      serial.begin_hs(19200, 3ul/*PA09 SERCOM2.1 RX<-GSM_TX */, 4ul/*PA08 SERCOM2.0 TX->GSM_RX*/, 2ul /* RTS PA14 SERCOM2.2 */, 5ul /* CTS PA15 SERCOM2.3 */, PIO_SERCOM_ALT, PIO_SERCOM_ALT, PIO_DIGITAL, PIO_DIGITAL, SERCOM_RX_PAD_1, UART_TX_PAD_0, &sercom2);
       watchdog::tickle();
     
       logger.println("Detecting baud");
@@ -175,7 +175,9 @@ namespace gsm
       if (!task) return;
       if (task->type==Task::TYPE_COMMAND && !failed) {
         current_task = (CommandTask*)task;
+        watchdog::tickle();
         serial.println(current_task->cmd);
+        watchdog::tickle();
       } else if (task->type==Task::TYPE_COMMAND && failed) {
         Task* next = task->next;
         delete task;
@@ -241,7 +243,7 @@ namespace gsm
         } else if (current_task) {
           logger.println(String("Unhandled: \"") + str + "\" running \"" + current_task->cmd + "\"");
         } else {
-          logger.println(String("Unhandled: \"") + str);
+          logger.println(String("Unhandled: \"") + str + "\"");
         }
       }
 
@@ -329,7 +331,7 @@ namespace gsm
               r->then("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", 20000);
             }
           }
-          else if (msg=="OK" && signal_strength<=1) {
+          else if (msg=="OK" && signal_strength==0) {
             logger.println("No signal");
             return ERROR;
           }

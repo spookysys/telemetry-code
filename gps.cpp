@@ -195,7 +195,7 @@ namespace gps
     
     void prime(const String& lon /*10.418731*/, const String& lat /*63.415344*/, String date /*2016/11/13*/, String time_utc /*16:56:23*/)
     {
-      //$PMTK741,Lat,Long,Alt,YYYY,MM,DD,hh,mm,ss *CS<CR><LF>
+      logger.println(String("Priming GPS with longitude ") + lon + " latitude " + lat + " date " + date + " time (UTC) " + time_utc);
 
       int default_altitude = 50;
       
