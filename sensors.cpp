@@ -178,9 +178,9 @@ namespace
             // [3] fsync as an interrupt is active 0:high 1:low
             // [2] fsync as an interrupt is 0:disabled 1:enabled
             // [1] bypass_en, affects i2c master pins
-            writeByte(ADDR, INT_PIN_CFG, 0x22); // INT is high until status register is read
+            //writeByte(ADDR, INT_PIN_CFG, 0x22); // INT is high until status register is read
             //writeByte(ADDR, INT_PIN_CFG, 0x12);  // INT is 50 microsecond pulse and any read to clear
-            //writeByte(ADDR, INT_PIN_CFG, 0x02); // INT is 50ms pulse or until status register is read
+            writeByte(ADDR, INT_PIN_CFG, 0x02); // INT is 50ms pulse or until status register is read
         
             // Reset fifo and signal paths
             writeByte(ADDR, USER_CTRL, 0x05);
@@ -262,7 +262,7 @@ namespace
         static const uint8_t ASAZ = 0x12;  // Fuse ROM z-axis sensitivity adjustment value
 
     private:
-        // Scale adjustment values
+        // Scale adjustment values (checkme - should there be an intended overflow here?)
         // adjust_f[0] = float(int(adjust[0]) - 128) / 256.f + 1.f;
         // adjust_f[1] = float(int(adjust[1]) - 128) / 256.f + 1.f;
         // adjust_f[2] = float(int(adjust[2]) - 128) / 256.f + 1.f;
@@ -305,7 +305,7 @@ namespace
             if (!newData()) return false;
             std::array<uint8_t, 7> rawData;
             readBytes(ADDR, XOUT_L, 7, &rawData[0]);  // Read the six raw data and ST2 registers sequentially into data array
-            overflow = rawData[6] & 0x80;
+            overflow = rawData[6] & 0x08;
             res[0] = (int16_t(rawData[1]) << 8) | rawData[0];  // Turn the MSB and LSB into a signed 16-bit value
             res[1] = (int16_t(rawData[3]) << 8) | rawData[2];  // Data stored as little Endian
             res[2] = (int16_t(rawData[5]) << 8) | rawData[4];
@@ -319,14 +319,14 @@ namespace
     class Altimeter
     {
         static const uint8_t ADDR = 0x76;
-        static const uint8_t WHO_AM_I_ADDR = 0xD0;
+        static const uint8_t WHO_AM_I = 0xD0;
         static const uint8_t WHO_AM_I_ANSWER = 0x58;
     public:
         bool setup()
         {
             bool ok = true;
             
-            uint8_t c = readByte(ADDR, WHO_AM_I_ADDR);
+            uint8_t c = readByte(ADDR, WHO_AM_I);
             if (c != WHO_AM_I_ANSWER) {
                 logger.println(String("Altimeter failed to identify: ") + String(c, HEX));
                 ok = false;
