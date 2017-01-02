@@ -1,12 +1,15 @@
-#include "logging.hpp"
 #include "watchdog.hpp"
 #include <algorithm>
+
+
+#define DISABLE_WATCHDOG
+
 
 // https://forum.arduino.cc/index.php?topic=366836.0
 
 namespace
 {
-  Logger& logger = logging::get("watchdog");
+  Stream& logger = Serial;
   
   static void   WDTsync() {
     while (WDT->STATUS.bit.SYNCBUSY == 1); //Just wait till WDT is free
@@ -47,11 +50,23 @@ namespace
   }
 }
 
+#ifdef DISABLE_WATCHDOG
+
+namespace watchdog
+{
+  void setup() {}
+  void tickle() {}
+  void reboot() {}
+
+}
+
+#else
+
 namespace watchdog
 {
   bool inited = false;
   
-  void begin() {
+  void setup() {
     setupWDT( 11 ); // initialize and activate WDT with maximum period 
     inited = true;
     tickle();
@@ -59,6 +74,7 @@ namespace watchdog
   
   void tickle()
   {
+    assert(inited);
     if (inited) resetWDT();
   }
   
@@ -66,9 +82,10 @@ namespace watchdog
   {
     logger.println("Rebooting");
     logger.flush();
-    begin();
+    setup();
     systemReset();    
   }
 
 }
+#endif
 

@@ -1,10 +1,11 @@
+#pragma once
 #include "common.hpp"
 
 
 namespace watchdog
 {
-  void reboot();
-  void begin();
-  void tickle();
+  extern void setup();
+  extern void tickle();
+  extern void reboot();
 }
 
