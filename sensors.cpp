@@ -321,19 +321,176 @@ namespace
         static const uint8_t ADDR = 0x76;
         static const uint8_t WHO_AM_I = 0xD0;
         static const uint8_t WHO_AM_I_ANSWER = 0x58;
+
+        static const uint8_t DIG_T1 = 0x88;
+        static const uint8_t DIG_T2 = 0x8A;
+        static const uint8_t DIG_T3 = 0x8C;
+
+        static const uint8_t DIG_P1 = 0x8E;
+        static const uint8_t DIG_P2 = 0x90;
+        static const uint8_t DIG_P3 = 0x92;
+        static const uint8_t DIG_P4 = 0x94;
+        static const uint8_t DIG_P5 = 0x96;
+        static const uint8_t DIG_P6 = 0x98;
+        static const uint8_t DIG_P7 = 0x9A;
+        static const uint8_t DIG_P8 = 0x9C;
+        static const uint8_t DIG_P9 = 0x9E;
+
+        static const uint8_t VERSION            = 0xD1;
+        static const uint8_t RESET              = 0xE0;
+
+        static const uint8_t STATUS             = 0xF3;
+        static const uint8_t CONTROL            = 0xF4;
+        static const uint8_t CONFIG             = 0xF5;
+        static const uint8_t PRESSUREDATA       = 0xF7;
+        static const uint8_t TEMPDATA           = 0xFA;
+
+
+        struct CalibData {
+            uint16_t dig_T1;
+            int16_t  dig_T2, dig_T3;
+
+            uint16_t dig_P1;
+            int16_t  dig_P2, dig_P3, dig_P4, dig_P5;
+            int16_t  dig_P6, dig_P7, dig_P8, dig_P9;
+        } calib_data;
+
+        uint16_t read16(uint8_t reg)
+        {
+            Wire.beginTransmission(ADDR);
+            Wire.write(reg);
+            Wire.endTransmission();
+            Wire.requestFrom(ADDR, (size_t) 2);
+            uint16_t value = (Wire.read() << 8) | Wire.read();
+            return value;
+        }
+        uint16_t read16_LE(uint8_t reg)
+        {
+            return misc::swapEndianness(read16(reg));
+        }
+        int16_t readS16_LE(uint8_t reg)
+        {
+            return misc::swapEndianness(read16(reg));
+        }
+        uint32_t read24(uint8_t reg)
+        {
+            Wire.beginTransmission(ADDR);
+            Wire.write((uint8_t)reg);
+            Wire.endTransmission();
+            Wire.requestFrom(ADDR, (size_t) 3);
+            uint32_t value;
+            value = Wire.read();
+            value <<= 8;
+            value |= Wire.read();
+            value <<= 8;
+            value |= Wire.read();
+            return value;
+        }
     public:
+
         bool setup()
         {
             bool ok = true;
             
+            // Reset
+            writeByte(ADDR, RESET, 0xB6);
+            delay(25);
+
+            // Read ID
             uint8_t c = readByte(ADDR, WHO_AM_I);
             if (c != WHO_AM_I_ANSWER) {
                 logger.println(String("Altimeter failed to identify: ") + String(c, HEX));
                 ok = false;
             }
-            
+
+            // Read calibration data
+            calib_data.dig_T1 = read16_LE(DIG_T1);
+            calib_data.dig_T2 = readS16_LE(DIG_T2);
+            calib_data.dig_T3 = readS16_LE(DIG_T3);
+            calib_data.dig_P1 = read16_LE(DIG_P1);
+            calib_data.dig_P2 = readS16_LE(DIG_P2);
+            calib_data.dig_P3 = readS16_LE(DIG_P3);
+            calib_data.dig_P4 = readS16_LE(DIG_P4);
+            calib_data.dig_P5 = readS16_LE(DIG_P5);
+            calib_data.dig_P6 = readS16_LE(DIG_P6);
+            calib_data.dig_P7 = readS16_LE(DIG_P7);
+            calib_data.dig_P8 = readS16_LE(DIG_P8);
+            calib_data.dig_P9 = readS16_LE(DIG_P9);
+
+            // For ~50 Hz, set pressure to x8, temperature to x1 and Ts to 0.5ms
+            // [7:5] Oversampling of temperature - 001:x1
+            // [4:2] Oversampling of pressure - 100:x8
+            // [1:0] Mode - 11:normal
+            writeByte(ADDR, CONTROL, 0x33);
+
+            // [7:5] Ts - 0:0.5ms
+            // [4:2] iir - 0:off (i hope)
+            // [0] SPI enable - 0:use_i2c
+            writeByte(ADDR, CONFIG, 0);
             return ok;
         }
+
+        bool isMeasuring() {
+            return readByte(ADDR, STATUS) & 0x4;
+        }
+
+        void read(float& temperature, float& pressure)
+        {
+            uint32_t t_fine;
+            temperature = readTemperature(t_fine);
+            pressure = readPressure(t_fine);
+        }
+    private:
+        float readTemperature(uint32_t& t_fine)
+        {
+            int32_t var1, var2;
+            int32_t adc_T = read24(TEMPDATA);
+            adc_T >>= 4;
+    
+            var1  = ((((adc_T>>3) - ((int32_t)calib_data.dig_T1 <<1))) *
+                    ((int32_t)calib_data.dig_T2)) >> 11;
+
+            var2  = (((((adc_T>>4) - ((int32_t)calib_data.dig_T1)) *
+                    ((adc_T>>4) - ((int32_t)calib_data.dig_T1))) >> 12) *
+                    ((int32_t)calib_data.dig_T3)) >> 14;
+
+           t_fine = var1 + var2;
+
+           float T  = (t_fine * 5 + 128) >> 8;
+   
+           return T/100;
+        }
+
+        float readPressure(uint32_t t_fine) 
+        {
+            int64_t var1, var2, p;
+
+            int32_t adc_P = read24(PRESSUREDATA);
+            adc_P >>= 4;
+
+            var1 = ((int64_t)t_fine) - 128000;
+            var2 = var1 * var1 * (int64_t)calib_data.dig_P6;
+            var2 = var2 + ((var1*(int64_t)calib_data.dig_P5)<<17);
+            var2 = var2 + (((int64_t)calib_data.dig_P4)<<35);
+            var1 = ((var1 * var1 * (int64_t)calib_data.dig_P3)>>8) +
+                   ((var1 * (int64_t)calib_data.dig_P2)<<12);
+
+            var1 = (((((int64_t)1)<<47)+var1))*((int64_t)calib_data.dig_P1)>>33;
+
+            if (var1 == 0) {
+                return 0;  // avoid exception caused by division by zero
+            }
+
+            p = 1048576 - adc_P;
+            p = (((p<<31) - var2)*3125) / var1;
+            var1 = (((int64_t)calib_data.dig_P9) * (p>>13) * (p>>13)) >> 25;
+            var2 = (((int64_t)calib_data.dig_P8) * p) >> 19;
+
+            p = ((p + var1 + var2) >> 8) + (((int64_t)calib_data.dig_P7)<<4);
+
+            return (float)p/256;
+        }
+
     };
     
     
