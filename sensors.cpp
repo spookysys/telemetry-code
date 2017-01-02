@@ -457,12 +457,12 @@ namespace
     Magnetometer mag;
     Altimeter alt;
 
-    volatile int isr_calls = 0;
+    volatile int channel_calls = 0;
     volatile int mag_valids = 0;
     volatile int imu_valids = 0;
     volatile int mag_ofs = 0;
-    void imuIsr()
-    {
+
+    auto read_sensors_channel = events::makeChannel<>("read_sensors").subscribe([&](unsigned long time) {
         bool mag_of;
         std::array<int16_t, 3> accel_data;
         std::array<int16_t, 3> gyro_data;
@@ -476,15 +476,23 @@ namespace
         if (mag_valid && mag_of)
             mag_ofs++;
         //imu.readInterruptStatus();
-        isr_calls++;
+        channel_calls++;
+    });
+
+    volatile int isr_calls = 0;
+    void imuIsr()
+    {
+      isr_calls++;
+      read_sensors_channel.publish();
     }
 
     auto &isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
         int call_hertz = (isr_calls * 1000) / delta;
         int imu_valid_hertz = (imu_valids * 1000) / delta;
         int mag_valid_hertz = (mag_valids * 1000) / delta;
-        logger.println(String("imuIsr called at ") + call_hertz + " Hz, imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
+        logger.println(String("imuIsr called at ") + call_hertz + " Hz, isr_calls-channel_calls: " + (isr_calls-channel_calls) + ", imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
         isr_calls = 0;
+        channel_calls = 0;
         imu_valids = 0;
         mag_valids = 0;
         mag_ofs = 0;
