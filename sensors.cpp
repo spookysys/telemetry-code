@@ -143,8 +143,8 @@ namespace
             // SMPLRT_DIV
             // Data output (fifo) sample rate
             // Set to 0 for the maximum 1 kHz (= internal sample rate)
-            //writeByte(ADDR, SMPLRT_DIV, 0x04); // 200 Hz
-            writeByte(ADDR, SMPLRT_DIV, 0x20); // sloooow
+            writeByte(ADDR, SMPLRT_DIV, 0x04); // 200 Hz
+            //writeByte(ADDR, SMPLRT_DIV, 0x20); // 30Hz (for debugging)
 
             // CONFIG
             // [6] Fifo behaviour on overflow - 0:drop oldest data, 1:drop new data
@@ -178,9 +178,9 @@ namespace
             // [3] fsync as an interrupt is active 0:high 1:low
             // [2] fsync as an interrupt is 0:disabled 1:enabled
             // [1] bypass_en, affects i2c master pins
-            //writeByte(ADDR, INT_PIN_CFG, 0x22); // INT is high until status register is read
+            writeByte(ADDR, INT_PIN_CFG, 0x22); // INT is high until status register is read
             //writeByte(ADDR, INT_PIN_CFG, 0x12);  // INT is 50 microsecond pulse and any read to clear
-            writeByte(ADDR, INT_PIN_CFG, 0x02); // INT is 50ms pulse or until status register is read
+            //writeByte(ADDR, INT_PIN_CFG, 0x02); // INT is 50ms pulse or until status register is read
         
             // Reset fifo and signal paths
             writeByte(ADDR, USER_CTRL, 0x05);
@@ -320,12 +320,19 @@ namespace
     Magnetometer magnetometer;
     Altimeter altimeter;
 
+    volatile int imu_calls = 0;
     void imuIsr() {
         imu.update();
-        logger.write('.');
         imu.readInterruptStatus();
+        imu_calls++;
     }
 
+    auto& isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
+      int hertz = (imu_calls*1000) / delta;
+      logger.println(String("imuIsr called at ") + hertz + " Hz");
+      imu_calls = 0;
+    });
+    
 /*
     auto& imu_proc = events::makeProcess("imu").setPeriod(10).subscribe([&](unsigned long time, unsigned long delta) {
         imu.update();
@@ -356,7 +363,8 @@ namespace sensors
         // I use the MPU interrupt to drive realtime update for control
         pinMode(pins::MPU_INT, INPUT);
         attachInterrupt(pins::MPU_INT, imuIsr, RISING);
-                
+        imu.readInterruptStatus();
+        
         return imu_ok && mag_ok && alt_ok;
     }
     

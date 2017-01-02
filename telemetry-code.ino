@@ -15,11 +15,13 @@ namespace {
     digitalWrite(pins::LED, val);    
     val = !val;
   });
-  
+
+  /*
   events::Process& stats_process = events::makeProcess("stats").subscribe([&](unsigned long time, unsigned long delta) {
     logger.println("Stats go here..");
     // assert(!"Just testing assertions");
-  });
+  }).setPeriod(10000);
+  */
 
 }
 
@@ -60,8 +62,6 @@ void setup() {
     });
     blink_process.setPeriod(1000);
     
-    // Print stats now and then
-    stats_process.setPeriod(10000);
 }
 
 
