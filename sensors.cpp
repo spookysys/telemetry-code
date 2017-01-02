@@ -308,7 +308,10 @@ namespace
             overflow = rawData[6] & 0x80;
             res[0] = (int16_t(rawData[1]) << 8) | rawData[0];  // Turn the MSB and LSB into a signed 16-bit value
             res[1] = (int16_t(rawData[3]) << 8) | rawData[2];  // Data stored as little Endian
-            res[2] = (int16_t(rawData[5]) << 8) | rawData[4]; 
+            res[2] = (int16_t(rawData[5]) << 8) | rawData[4];
+            // flip axes to match gyro/accel (see MPU-9250 Product Specification chapter "Orientation of Axes"
+            std::swap(res[0], res[1]);
+            res[2] = -res[2];
             return true;
         }
     };
