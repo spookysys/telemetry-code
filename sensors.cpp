@@ -204,30 +204,33 @@ namespace
             return ok;
         }
         
-        void update()
+        bool read(std::array<int16_t, 3>& accel, std::array<int16_t, 3>& gyro)
         {
-            // Full gyro and accelerometer data
-            static const int packet_size = 12;
-            
             // Number of bytes in fifo
             uint16_t fifo_bytes;
             readBytes(ADDR, FIFO_COUNTH, 2, (uint8_t*)&fifo_bytes);
             fifo_bytes = misc::swapEndianness(fifo_bytes);
+
+            // How many complete packets?
+            static const int packet_size = 12;
             uint16_t packet_count = fifo_bytes / packet_size;
             
-            // Read from fifo
+            // Empty the fifo and return the last entry
             if (packet_count) {
                 std::array<int16_t, packet_size/2> packet_data;
                 for (int i=0; i<packet_count; i++) {
                     readBytes(ADDR, FIFO_R_W, packet_size, (uint8_t*)&packet_data[0]);
                 }
-                /*
-                logger.print(String("Packets: ") + String(packet_count) + "\t");
-                for (int i=0; i<packet_size/2; i++) logger.print(String(misc::swapEndianness(packet_data[i])) + "\t");
-                logger.println();
-                */
+                accel[0] = misc::swapEndianness(packet_data[0]);
+                accel[1] = misc::swapEndianness(packet_data[1]);
+                accel[2] = misc::swapEndianness(packet_data[2]);
+                gyro[0]  = misc::swapEndianness(packet_data[3]);
+                gyro[1]  = misc::swapEndianness(packet_data[4]);
+                gyro[2]  = misc::swapEndianness(packet_data[5]);
+                return true;
+            } else {
+                return false;
             }
-            
         }
         
         uint8_t readInterruptStatus() {
@@ -259,7 +262,11 @@ namespace
         static const uint8_t ASAZ = 0x12;  // Fuse ROM z-axis sensitivity adjustment value
 
     private:
-        std::array<float, 3> destination;
+        // Scale adjustment values
+        // adjust_f[0] = float(int(adjust[0]) - 128) / 256.f + 1.f;
+        // adjust_f[1] = float(int(adjust[1]) - 128) / 256.f + 1.f;
+        // adjust_f[2] = float(int(adjust[2]) - 128) / 256.f + 1.f;
+        std::array<uint8_t, 3> adjust;
     public:
         bool setup()
         {
@@ -276,11 +283,7 @@ namespace
             delay(10);
             writeByte(ADDR, CNTL, 0x0F); // Enter Fuse ROM access mode
             delay(10);
-            uint8_t rawData[3];  // x/y/z gyro calibration data stored here
-            readBytes(ADDR, ASAX, 3, &rawData[0]);  // Read the x-, y-, and z-axis calibration values
-            destination[0] =  (float)(rawData[0] - 128)/256. + 1.;   // Return x-axis sensitivity adjustment values, etc.
-            destination[1] =  (float)(rawData[1] - 128)/256. + 1.;  
-            destination[2] =  (float)(rawData[2] - 128)/256. + 1.; 
+            readBytes(ADDR, ASAX, 3, &adjust[0]);  // Read the x-, y-, and z-axis calibration values
             writeByte(ADDR, CNTL, 0x00); // Power down magnetometer  
             delay(10);
             // Configure the magnetometer for continuous read and highest resolution
@@ -290,6 +293,23 @@ namespace
             delay(10);
             
             return ok;
+        }
+
+        bool newData()
+        {
+            return readByte(ADDR, ST1) & 0x01;
+        }
+
+        bool read(std::array<int16_t, 3>& res, bool& overflow) 
+        {
+            if (!newData()) return false;
+            std::array<uint8_t, 7> rawData;
+            readBytes(ADDR, XOUT_L, 7, &rawData[0]);  // Read the six raw data and ST2 registers sequentially into data array
+            overflow = rawData[6] & 0x80;
+            res[0] = (int16_t(rawData[1]) << 8) | rawData[0];  // Turn the MSB and LSB into a signed 16-bit value
+            res[1] = (int16_t(rawData[3]) << 8) | rawData[2];  // Data stored as little Endian
+            res[2] = (int16_t(rawData[5]) << 8) | rawData[4]; 
+            return true;
         }
     };
 
@@ -317,20 +337,36 @@ namespace
     
 
     Imu imu;
-    Magnetometer magnetometer;
-    Altimeter altimeter;
+    Magnetometer mag;
+    Altimeter alt;
 
-    volatile int imu_calls = 0;
+    volatile int isr_calls = 0;
+    volatile int mag_valids = 0;
+    volatile int imu_valids = 0;
+    volatile int mag_ofs = 0;
     void imuIsr() {
-        imu.update();
+        bool mag_of;
+        std::array<int16_t, 3> accel_data;
+        std::array<int16_t, 3> gyro_data;
+        std::array<int16_t, 3> mag_data;
+        bool imu_valid = imu.read(accel_data, gyro_data);
+        bool mag_valid = mag.read(mag_data, mag_of);
+        if (imu_valid) imu_valids++;
+        if (mag_valid) mag_valids++;
+        if (mag_valid && mag_of) mag_ofs++;
         imu.readInterruptStatus();
-        imu_calls++;
+        isr_calls++;
     }
 
     auto& isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
-      int hertz = (imu_calls*1000) / delta;
-      logger.println(String("imuIsr called at ") + hertz + " Hz");
-      imu_calls = 0;
+      int call_hertz = (isr_calls*1000) / delta;
+      int imu_valid_hertz = (imu_valids*1000) / delta;
+      int mag_valid_hertz = (mag_valids*1000) / delta;
+      logger.println(String("imuIsr called at ") + call_hertz + " Hz, imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
+      isr_calls = 0;
+      imu_valids = 0;
+      mag_valids = 0;
+      mag_ofs = 0;
     });
     
 /*
@@ -350,15 +386,17 @@ namespace sensors
 
     bool setup()
     {
-        I2CScan();
 
         // setup all my sensors
-        bool imu_ok = imu.setup();
-        bool mag_ok = magnetometer.setup();
-        bool alt_ok = altimeter.setup();
+        bool imu_ok = imu.setup(); // sets pass-thru req for magnetometer etc
+        bool mag_ok = mag.setup();
+        bool alt_ok = alt.setup();
         assert(imu_ok);
         assert(mag_ok);
         assert(alt_ok);
+
+        // perform scan
+        I2CScan();
 
         // I use the MPU interrupt to drive realtime update for control
         pinMode(pins::MPU_INT, INPUT);
