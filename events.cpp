@@ -83,7 +83,9 @@ namespace events
     void BaseChannel::publishImpl(unsigned long time, function<void(unsigned long)> cbCaller)
     {
         ChannelEvent value = {this, time, cbCaller};
+        noInterrupts();
         channel_events().emplace_back(value);
+        interrupts();
     }
 
     BaseChannel::BaseChannel(const char* name) : name(name)
@@ -99,16 +101,21 @@ namespace events
     void loop()
     {
         unsigned long time = millis();
+        noInterrupts();
         for (int i = 0; i < (int)channel_events().size(); ) {
-            auto& item = channel_events()[i];
-            if (time >= item.time) {
-                item.callbackCaller(time);
-                item = channel_events().back();
+            auto& item_ref = channel_events()[i];
+            if (time >= item_ref.time) {
+                item_ref = channel_events().back();
                 channel_events().pop_back();
+                auto callbackCaller = item_ref.callbackCaller;
+                interrupts();
+                callbackCaller(time);
+                noInterrupts();
             } else {
                 i++;
             }
         }
+        interrupts();
         for (auto& iter : processes()) {
             iter->runIfNeeded(time);
         }
