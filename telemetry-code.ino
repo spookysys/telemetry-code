@@ -36,7 +36,13 @@ namespace {
     logger.println(String() + "Free RAM: " + freeRam() + ", Battery Voltage: " + readBatteryVoltage());
     
   }).setPeriod(10000);
-  
+
+  void wireKhz(int wire_khz)
+  {
+    sercom3.disableWIRE();
+    SERCOM3->I2CM.BAUD.bit.BAUD = SystemCoreClock / (2000 * wire_khz) - 1;
+    sercom3.enableWIRE();        
+  }
 
 }
 
@@ -47,12 +53,12 @@ void setup() {
     // light LED while booting
     pinMode(pins::LED, OUTPUT);
     digitalWrite(pins::LED, true);
+    watchdog::tickle();
     
     // Init i2c
     Wire.begin();
-    sercom3.disableWIRE();
-    SERCOM3->I2CM.BAUD.bit.BAUD = SystemCoreClock / (2 * 400000) - 1; // 400khz
-    sercom3.enableWIRE();    
+    wireKhz(400);
+    watchdog::tickle();
     
     // Init serial
     SerialUSB.begin(9600);
@@ -63,19 +69,22 @@ void setup() {
         watchdog::tickle();
     }
     SerialUSB.println(String("Yo! ") + last_i);
+    watchdog::tickle();
         
     // Init modules
     bool sensors_ok = sensors::setup();
-    bool telelink_ok = telelink::setup();
     assert(sensors_ok);
+    watchdog::tickle();
+    bool telelink_ok = telelink::setup();
     assert(telelink_ok);
+    watchdog::tickle();
     
     // Indicate correct or errorenous operation by blinking
     common::assert_channel.subscribe([&](unsigned long time, const char* msg) {
         blink_process.setPeriod(100);
     });
     blink_process.setPeriod(1000);
-    
+    watchdog::tickle();    
 }
 
 

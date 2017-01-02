@@ -1,6 +1,7 @@
 #include "sensors.hpp"
 #include "pins.hpp"
 #include "events.hpp"
+#include "watchdog.hpp"
 #include <Wire.h>
 #include <array>
 #include "wiring_private.h" // pinPeripheral() function
@@ -474,7 +475,7 @@ namespace
             mag_valids++;
         if (mag_valid && mag_of)
             mag_ofs++;
-        imu.readInterruptStatus();
+        //imu.readInterruptStatus();
         isr_calls++;
     }
 
@@ -506,32 +507,40 @@ namespace
 
 } // anon
 
+
+
 namespace sensors
 {
 
     bool setup()
     {
-        imu.setBypass();
+        delay(25);
+        watchdog::tickle();
         imu.sendReset();
         alt.sendReset();
         delay(25);
+        watchdog::tickle();
        
         // setup all my sensors
         bool imu_ok = imu.setup(); // sets pass-thru req for magnetometer etc
-        bool mag_ok = mag.setup();
-        bool alt_ok = alt.setup();
         assert(imu_ok);
+        watchdog::tickle();
+        bool mag_ok = mag.setup();
         assert(mag_ok);
+        watchdog::tickle();
+        bool alt_ok = alt.setup();
         assert(alt_ok);
+        watchdog::tickle();
 
         // perform scan
         I2CScan();
+        watchdog::tickle();
 
         // I use the MPU interrupt to drive realtime update for control
         pinMode(pins::MPU_INT, INPUT);
         attachInterrupt(pins::MPU_INT, imuIsr, RISING);
-        imu.readInterruptStatus();
-
+        watchdog::tickle();
+        
         return imu_ok && mag_ok && alt_ok;
     }
 }
