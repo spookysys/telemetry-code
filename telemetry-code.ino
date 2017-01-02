@@ -47,8 +47,7 @@ void setup() {
         last_i = i*100;
         watchdog::tickle();
     }
-    SerialUSB.println("Yo!");
-    SerialUSB.println(last_i);
+    SerialUSB.println(String("Yo! ") + last_i);
         
     // Init modules
     bool sensors_ok = sensors::setup();

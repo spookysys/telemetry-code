@@ -4,85 +4,84 @@
 #include <Wire.h>
 #include <array>
 #include "wiring_private.h" // pinPeripheral() function
-namespace 
+
+namespace
 {
     Stream& logger = Serial;
-        
+
     // I2C scan function
     void I2CScan()
     {
-      // scan for i2c devices
-      byte error, address;
-      int nDevices;
-    
-      logger.println("Scanning...");
-    
-      nDevices = 0;
-      for (address = 1; address < 127; address++ )
-      {
-        // The i2c_scanner uses the return value of
-        // the Write.endTransmisstion to see if
-        // a device did acknowledge to the address.
-        Wire.beginTransmission(address);
-        error = Wire.endTransmission();
-    
-        if (error == 0)
+        // scan for i2c devices
+        byte error, address;
+        int nDevices;
+
+        logger.println("Scanning...");
+
+        nDevices = 0;
+        for (address = 1; address < 127; address++)
         {
-          logger.print("I2C device found at address 0x");
-          if (address < 16)
-            logger.print("0");
-          logger.print(address, HEX);
-          logger.println("  !");
-    
-          nDevices++;
+            // The i2c_scanner uses the return value of
+            // the Write.endTransmisstion to see if
+            // a device did acknowledge to the address.
+            Wire.beginTransmission(address);
+            error = Wire.endTransmission();
+
+            if (error == 0)
+            {
+                logger.print("I2C device found at address 0x");
+                if (address < 16)
+                    logger.print("0");
+                logger.print(address, HEX);
+                logger.println("  !");
+
+                nDevices++;
+            }
+            else if (error == 4)
+            {
+                logger.print("Unknow error at address 0x");
+                if (address < 16)
+                    logger.print("0");
+                logger.println(address, HEX);
+            }
         }
-        else if (error == 4)
-        {
-          logger.print("Unknow error at address 0x");
-          if (address < 16)
-            logger.print("0");
-          logger.println(address, HEX);
-        }
-      }
-      if (nDevices == 0)
-        logger.println("No I2C devices found\n");
-      else
-        logger.println("done\n");
-    
+        if (nDevices == 0)
+            logger.println("No I2C devices found\n");
+        else
+            logger.println("done\n");
     }
-    
 
     void writeByte(uint8_t address, uint8_t subAddress, uint8_t data)
     {
-        Wire.beginTransmission(address);  // Initialize the Tx buffer
-        Wire.write(subAddress);           // Put slave register address in Tx buffer
-        Wire.write(data);                 // Put data in Tx buffer
-        Wire.endTransmission();           // Send the Tx buffer
+        Wire.beginTransmission(address); // Initialize the Tx buffer
+        Wire.write(subAddress);          // Put slave register address in Tx buffer
+        Wire.write(data);                // Put data in Tx buffer
+        Wire.endTransmission();          // Send the Tx buffer
     }
-    
+
     uint8_t readByte(uint8_t address, uint8_t subAddress)
     {
-        uint8_t data; // `data` will store the register data
-        Wire.beginTransmission(address);         // Initialize the Tx buffer
-        Wire.write(subAddress);                  // Put slave register address in Tx buffer
-        Wire.endTransmission(false);             // Send the Tx buffer, but send a restart to keep connection alive
-        Wire.requestFrom(address, (size_t) 1);   // Read one byte from slave register address
-        data = Wire.read();                      // Fill Rx buffer with result
-        return data;                             // Return data read from slave register
+        uint8_t data;                         // `data` will store the register data
+        Wire.beginTransmission(address);      // Initialize the Tx buffer
+        Wire.write(subAddress);               // Put slave register address in Tx buffer
+        Wire.endTransmission(false);          // Send the Tx buffer, but send a restart to keep connection alive
+        Wire.requestFrom(address, (size_t)1); // Read one byte from slave register address
+        data = Wire.read();                   // Fill Rx buffer with result
+        return data;                          // Return data read from slave register
     }
-    
-    void readBytes(uint8_t address, uint8_t subAddress, uint8_t count, uint8_t * dest)
+
+    void readBytes(uint8_t address, uint8_t subAddress, uint8_t count, uint8_t *dest)
     {
-        Wire.beginTransmission(address);   // Initialize the Tx buffer
-        Wire.write(subAddress);            // Put slave register address in Tx buffer
-        Wire.endTransmission(false);       // Send the Tx buffer, but send a restart to keep connection alive
+        Wire.beginTransmission(address); // Initialize the Tx buffer
+        Wire.write(subAddress);          // Put slave register address in Tx buffer
+        Wire.endTransmission(false);     // Send the Tx buffer, but send a restart to keep connection alive
         uint8_t i = 0;
-        Wire.requestFrom(address, (size_t) count);  // Read bytes from slave register address
-        while (Wire.available()) {         // Put read results in the Rx buffer
+        Wire.requestFrom(address, (size_t)count); // Read bytes from slave register address
+        while (Wire.available())
+        { // Put read results in the Rx buffer
             dest[i++] = Wire.read();
         }
     }
-    
 
     // accelerometer and gyroscope
     class Imu
@@ -90,7 +89,6 @@ namespace
         static const uint8_t ADDR = (!pins::MPU_ADO) ? 0x68 : 0x69;
         static const uint8_t WHO_AM_I = 0x75;
         static const uint8_t WHO_AM_I_ANSWER = 0x71;
-
 
         static const uint8_t SMPLRT_DIV = 0x19;
         static const uint8_t CONFIG = 0x1A;
@@ -100,14 +98,14 @@ namespace
 
         static const uint8_t FIFO_EN = 0x23;
         static const uint8_t I2C_MST_CTRL = 0x24;
-        
+
         static const uint8_t INT_PIN_CFG = 0x37;
         static const uint8_t INT_ENABLE = 0x38;
 
         static const uint8_t INT_STATUS = 0x3A;
 
         static const uint8_t USER_CTRL = 0x6A;
-        static const uint8_t PWR_MGMT_1 = 0x6B; 
+        static const uint8_t PWR_MGMT_1 = 0x6B;
         static const uint8_t PWR_MGMT_2 = 0x6C;
 
         static const uint8_t FIFO_COUNTH = 0x72;
@@ -115,31 +113,38 @@ namespace
         static const uint8_t FIFO_R_W = 0x74;
 
     private:
-        int gyro_scale = 0; // 250 dps
+        int gyro_scale = 0;  // 250 dps
         int accel_scale = 0; // 2 g
-        
+
     public:
         // Howto interrupt: https://github.com/kriswiner/MPU-9250/issues/57
-        
+
+        void sendReset()
+        {
+            writeByte(ADDR, PWR_MGMT_1, 0x80);
+        }
+
+        void setBypass()
+        {
+            writeByte(ADDR, INT_PIN_CFG, 0x02); // allows access to magnetometer (I think)
+        }
+
         bool setup()
         {
             bool ok = true;
             
             // Identify
             uint8_t c = readByte(ADDR, WHO_AM_I);
-            if (c != WHO_AM_I_ANSWER) {
+            if (c != WHO_AM_I_ANSWER)
+            {
                 logger.println(String("MPU failed to identify: ") + String(c, HEX));
                 ok = false;
             }
-            
-            // Reset
-            writeByte(ADDR, PWR_MGMT_1, 0x80);
-            delay(100);
 
             // Setup clock
             writeByte(ADDR, PWR_MGMT_1, 0x01);
             delay(200);
-            
+
             // SMPLRT_DIV
             // Data output (fifo) sample rate
             // Set to 0 for the maximum 1 kHz (= internal sample rate)
@@ -151,14 +156,14 @@ namespace
             // [5:3] fsync mode - 0: disabled
             // [2:0] DLPF_CFG - Gyro/Temperature filter bandwidth - 0:250Hz, 1:184Hz, 2:92Hz, 3:41Hz..., 5:5Hz and 7:3600Hz
             writeByte(ADDR, CONFIG, 0x43); // 41Hz, 5.9ms delay
-    
+
             // GYRO_CONFIG
             // [7:5] Gyro Self-Test [XYZ] - 0:disabled
             // [4:3] Gyro Scale - 0: 250dps, 1:500dps, 2:1000dps, 3:2000dps
             // [1:0] Fchoice_b - Gyro/Temperature filter enable - 0:enabled
-            assert(!(gyro_scale%4));
-            writeByte(ADDR, GYRO_CONFIG, gyro_scale<<3);
-            
+            assert(!(gyro_scale % 4));
+            writeByte(ADDR, GYRO_CONFIG, gyro_scale << 3);
+
             // ACCEL_CONFIG2
             // [3] fchoice_b - Filter enable - 0:enabled
             // [2:0] DLPF_CFG - Filter bandwidth - (complicated)
@@ -167,8 +172,8 @@ namespace
             // ACCEL_CONFIG
             // [2:0] Accelerometer Self-Test [XYZ] - 0:disabled
             // [4:3] Accelerometer Scale - 0:2g, 1:4g, 2:8g, 3:16g
-            assert(!(accel_scale%4));
-            writeByte(ADDR, ACCEL_CONFIG, accel_scale<<3);
+            assert(!(accel_scale % 4));
+            writeByte(ADDR, ACCEL_CONFIG, accel_scale << 3);
 
             // Interrupt pin config
             // [7] int pin is active 0:high, 1:low
@@ -181,11 +186,11 @@ namespace
             //writeByte(ADDR, INT_PIN_CFG, 0x22); // INT is high until status register is read
             //writeByte(ADDR, INT_PIN_CFG, 0x12);  // INT is 50 microsecond pulse and any read to clear
             writeByte(ADDR, INT_PIN_CFG, 0x02); // INT is 50ms pulse or until status register is read
-        
+
             // Reset fifo and signal paths
             writeByte(ADDR, USER_CTRL, 0x05);
-            delay(25);  // Delay a while to let the device stabilize
-            
+            delay(25); // Delay a while to let the device stabilize
+
             // USER_CTRL
             // Bit 7 enable DMP, bit 3 reset DMP (secret)
             // [6] FIFO_EN 1:enable
@@ -199,41 +204,46 @@ namespace
             writeByte(ADDR, FIFO_EN, 0x78); // gyro and accel
 
             // Enable Raw Sensor Data Ready interrupt to propagate to interrupt pin
-            writeByte(ADDR, INT_ENABLE, 0x01);  // Enable data ready (bit 0) interrupt
+            writeByte(ADDR, INT_ENABLE, 0x01); // Enable data ready (bit 0) interrupt
 
             return ok;
         }
-        
-        bool read(std::array<int16_t, 3>& accel, std::array<int16_t, 3>& gyro)
+
+        bool read(std::array<int16_t, 3> &accel, std::array<int16_t, 3> &gyro)
         {
             // Number of bytes in fifo
             uint16_t fifo_bytes;
-            readBytes(ADDR, FIFO_COUNTH, 2, (uint8_t*)&fifo_bytes);
+            readBytes(ADDR, FIFO_COUNTH, 2, (uint8_t *)&fifo_bytes);
             fifo_bytes = misc::swapEndianness(fifo_bytes);
 
             // How many complete packets?
             static const int packet_size = 12;
             uint16_t packet_count = fifo_bytes / packet_size;
-            
+
             // Empty the fifo and return the last entry
-            if (packet_count) {
-                std::array<int16_t, packet_size/2> packet_data;
-                for (int i=0; i<packet_count; i++) {
-                    readBytes(ADDR, FIFO_R_W, packet_size, (uint8_t*)&packet_data[0]);
+            if (packet_count)
+            {
+                std::array<int16_t, packet_size / 2> packet_data;
+                for (int i = 0; i < packet_count; i++)
+                {
+                    readBytes(ADDR, FIFO_R_W, packet_size, (uint8_t *)&packet_data[0]);
                 }
                 accel[0] = misc::swapEndianness(packet_data[0]);
                 accel[1] = misc::swapEndianness(packet_data[1]);
                 accel[2] = misc::swapEndianness(packet_data[2]);
-                gyro[0]  = misc::swapEndianness(packet_data[3]);
-                gyro[1]  = misc::swapEndianness(packet_data[4]);
-                gyro[2]  = misc::swapEndianness(packet_data[5]);
+                gyro[0] = misc::swapEndianness(packet_data[3]);
+                gyro[1] = misc::swapEndianness(packet_data[4]);
+                gyro[2] = misc::swapEndianness(packet_data[5]);
                 return true;
-            } else {
+            }
+            else
+            {
                 return false;
             }
         }
-        
-        uint8_t readInterruptStatus() {
+
+        uint8_t readInterruptStatus()
+        {
             return readByte(ADDR, INT_STATUS);
         }
     };
@@ -241,25 +251,25 @@ namespace
     class Magnetometer
     {
         static const uint8_t ADDR = 0x0C;
-        
+
         static const uint8_t WHO_AM_I = 0x00;
         static const uint8_t WHO_AM_I_ANSWER = 0x48;
 
         static const uint8_t INFO = 0x01;
-        static const uint8_t ST1 = 0x02;  // data ready status bit 0
-        static const uint8_t XOUT_L = 0x03;  // data
+        static const uint8_t ST1 = 0x02;    // data ready status bit 0
+        static const uint8_t XOUT_L = 0x03; // data
         static const uint8_t XOUT_H = 0x04;
         static const uint8_t YOUT_L = 0x05;
         static const uint8_t YOUT_H = 0x06;
         static const uint8_t ZOUT_L = 0x07;
         static const uint8_t ZOUT_H = 0x08;
-        static const uint8_t ST2 = 0x09;  // Data overflow bit 3 and data read error status bit 2
-        static const uint8_t CNTL = 0x0A;  // Power down (0000), single-measurement (0001), self-test (1000) and Fuse ROM (1111) modes on bits 3:0
-        static const uint8_t ASTC = 0x0C;  // Self test control
-        static const uint8_t I2CDIS = 0x0F;  // I2C disable
-        static const uint8_t ASAX = 0x10;  // Fuse ROM x-axis sensitivity adjustment value
-        static const uint8_t ASAY = 0x11;  // Fuse ROM y-axis sensitivity adjustment value
-        static const uint8_t ASAZ = 0x12;  // Fuse ROM z-axis sensitivity adjustment value
+        static const uint8_t ST2 = 0x09;    // Data overflow bit 3 and data read error status bit 2
+        static const uint8_t CNTL = 0x0A;   // Power down (0000), single-measurement (0001), self-test (1000) and Fuse ROM (1111) modes on bits 3:0
+        static const uint8_t ASTC = 0x0C;   // Self test control
+        static const uint8_t I2CDIS = 0x0F; // I2C disable
+        static const uint8_t ASAX = 0x10;   // Fuse ROM x-axis sensitivity adjustment value
+        static const uint8_t ASAY = 0x11;   // Fuse ROM y-axis sensitivity adjustment value
+        static const uint8_t ASAZ = 0x12;   // Fuse ROM z-axis sensitivity adjustment value
 
     private:
         // Scale adjustment values (checkme - should there be an intended overflow here?)
@@ -267,31 +277,33 @@ namespace
         // adjust_f[1] = float(int(adjust[1]) - 128) / 256.f + 1.f;
         // adjust_f[2] = float(int(adjust[2]) - 128) / 256.f + 1.f;
         std::array<uint8_t, 3> adjust;
+
     public:
         bool setup()
         {
             bool ok = true;
-            
+
             uint8_t c = readByte(ADDR, WHO_AM_I);
-            if (c != WHO_AM_I_ANSWER) {
+            if (c != WHO_AM_I_ANSWER)
+            {
                 logger.println(String("Magnetometer failed to identify: ") + String(c, HEX));
                 ok = false;
             }
-            
+
             // First extract the factory calibration for each magnetometer axis
-            writeByte(ADDR, CNTL, 0x00); // Power down magnetometer  
+            writeByte(ADDR, CNTL, 0x00); // Power down magnetometer
             delay(10);
             writeByte(ADDR, CNTL, 0x0F); // Enter Fuse ROM access mode
             delay(10);
-            readBytes(ADDR, ASAX, 3, &adjust[0]);  // Read the x-, y-, and z-axis calibration values
-            writeByte(ADDR, CNTL, 0x00); // Power down magnetometer  
+            readBytes(ADDR, ASAX, 3, &adjust[0]); // Read the x-, y-, and z-axis calibration values
+            writeByte(ADDR, CNTL, 0x00);          // Power down magnetometer
             delay(10);
             // Configure the magnetometer for continuous read and highest resolution
             // set Mscale bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL register,
             // and enable continuous mode data acquisition Mmode (bits [3:0]), 0010 for 8 Hz and 0110 for 100 Hz sample rates
             writeByte(ADDR, CNTL, 0x16); // 16 bit, 100Hz acquisition
             delay(10);
-            
+
             return ok;
         }
 
@@ -300,14 +312,15 @@ namespace
             return readByte(ADDR, ST1) & 0x01;
         }
 
-        bool read(std::array<int16_t, 3>& res, bool& overflow) 
+        bool read(std::array<int16_t, 3> &res, bool &overflow)
         {
-            if (!newData()) return false;
+            if (!newData())
+                return false;
             std::array<uint8_t, 7> rawData;
-            readBytes(ADDR, XOUT_L, 7, &rawData[0]);  // Read the six raw data and ST2 registers sequentially into data array
+            readBytes(ADDR, XOUT_L, 7, &rawData[0]); // Read the six raw data and ST2 registers sequentially into data array
             overflow = rawData[6] & 0x08;
-            res[0] = (int16_t(rawData[1]) << 8) | rawData[0];  // Turn the MSB and LSB into a signed 16-bit value
-            res[1] = (int16_t(rawData[3]) << 8) | rawData[2];  // Data stored as little Endian
+            res[0] = (int16_t(rawData[1]) << 8) | rawData[0]; // Turn the MSB and LSB into a signed 16-bit value
+            res[1] = (int16_t(rawData[3]) << 8) | rawData[2]; // Data stored as little Endian
             res[2] = (int16_t(rawData[5]) << 8) | rawData[4];
             // flip axes to match gyro/accel (see MPU-9250 Product Specification chapter "Orientation of Axes"
             std::swap(res[0], res[1]);
@@ -322,100 +335,53 @@ namespace
         static const uint8_t WHO_AM_I = 0xD0;
         static const uint8_t WHO_AM_I_ANSWER = 0x58;
 
-        static const uint8_t DIG_T1 = 0x88;
-        static const uint8_t DIG_T2 = 0x8A;
-        static const uint8_t DIG_T3 = 0x8C;
+        static const uint8_t CALIBRATION_DATA = 0x88;
 
-        static const uint8_t DIG_P1 = 0x8E;
-        static const uint8_t DIG_P2 = 0x90;
-        static const uint8_t DIG_P3 = 0x92;
-        static const uint8_t DIG_P4 = 0x94;
-        static const uint8_t DIG_P5 = 0x96;
-        static const uint8_t DIG_P6 = 0x98;
-        static const uint8_t DIG_P7 = 0x9A;
-        static const uint8_t DIG_P8 = 0x9C;
-        static const uint8_t DIG_P9 = 0x9E;
+        static const uint8_t VERSION = 0xD1;
+        static const uint8_t RESET = 0xE0;
 
-        static const uint8_t VERSION            = 0xD1;
-        static const uint8_t RESET              = 0xE0;
+        static const uint8_t STATUS = 0xF3;
+        static const uint8_t CONTROL = 0xF4;
+        static const uint8_t CONFIG = 0xF5;
+        
+        static const uint8_t PRESSUREDATA = 0xF7;
+        static const uint8_t TEMPDATA = 0xFA;
 
-        static const uint8_t STATUS             = 0xF3;
-        static const uint8_t CONTROL            = 0xF4;
-        static const uint8_t CONFIG             = 0xF5;
-        static const uint8_t PRESSUREDATA       = 0xF7;
-        static const uint8_t TEMPDATA           = 0xFA;
-
-
-        struct CalibData {
-            uint16_t dig_T1;
-            int16_t  dig_T2, dig_T3;
-
-            uint16_t dig_P1;
-            int16_t  dig_P2, dig_P3, dig_P4, dig_P5;
-            int16_t  dig_P6, dig_P7, dig_P8, dig_P9;
-        } calib_data;
-
-        uint16_t read16(uint8_t reg)
+        struct CalibrationData
         {
-            Wire.beginTransmission(ADDR);
-            Wire.write(reg);
-            Wire.endTransmission();
-            Wire.requestFrom(ADDR, (size_t) 2);
-            uint16_t value = (Wire.read() << 8) | Wire.read();
-            return value;
-        }
-        uint16_t read16_LE(uint8_t reg)
-        {
-            return misc::swapEndianness(read16(reg));
-        }
-        int16_t readS16_LE(uint8_t reg)
-        {
-            return misc::swapEndianness(read16(reg));
-        }
-        uint32_t read24(uint8_t reg)
-        {
-            Wire.beginTransmission(ADDR);
-            Wire.write((uint8_t)reg);
-            Wire.endTransmission();
-            Wire.requestFrom(ADDR, (size_t) 3);
-            uint32_t value;
-            value = Wire.read();
-            value <<= 8;
-            value |= Wire.read();
-            value <<= 8;
-            value |= Wire.read();
-            return value;
-        }
+            uint16_t t1;
+            int16_t t2, t3;
+            uint16_t p1;
+            int16_t p2, p3, p4, p5, p6, p7, p8, p9;
+            uint16_t resv;
+        };
+
+        union {
+            CalibrationData dig;
+            std::array<int16_t, 13> calibration_data;
+        };
+
     public:
-
+        void sendReset()
+        {
+            writeByte(ADDR, RESET, 0xB6);          
+        }
+        
         bool setup()
         {
             bool ok = true;
-            
-            // Reset
-            writeByte(ADDR, RESET, 0xB6);
-            delay(25);
 
             // Read ID
             uint8_t c = readByte(ADDR, WHO_AM_I);
-            if (c != WHO_AM_I_ANSWER) {
+            if (c != WHO_AM_I_ANSWER)
+            {
                 logger.println(String("Altimeter failed to identify: ") + String(c, HEX));
                 ok = false;
             }
 
             // Read calibration data
-            calib_data.dig_T1 = read16_LE(DIG_T1);
-            calib_data.dig_T2 = readS16_LE(DIG_T2);
-            calib_data.dig_T3 = readS16_LE(DIG_T3);
-            calib_data.dig_P1 = read16_LE(DIG_P1);
-            calib_data.dig_P2 = readS16_LE(DIG_P2);
-            calib_data.dig_P3 = readS16_LE(DIG_P3);
-            calib_data.dig_P4 = readS16_LE(DIG_P4);
-            calib_data.dig_P5 = readS16_LE(DIG_P5);
-            calib_data.dig_P6 = readS16_LE(DIG_P6);
-            calib_data.dig_P7 = readS16_LE(DIG_P7);
-            calib_data.dig_P8 = readS16_LE(DIG_P8);
-            calib_data.dig_P9 = readS16_LE(DIG_P9);
+            assert(sizeof(CalibrationData) == 13 * 2);
+            readBytes(ADDR, CALIBRATION_DATA, sizeof(CalibrationData), (uint8_t*)&calibration_data[0]);
 
             // For ~50 Hz, set pressure to x8, temperature to x1 and Ts to 0.5ms
             // [7:5] Oversampling of temperature - 001:x1
@@ -430,71 +396,61 @@ namespace
             return ok;
         }
 
-        bool isMeasuring() {
+        bool isMeasuring()
+        {
             return readByte(ADDR, STATUS) & 0x4;
         }
 
-        void read(float& temperature, float& pressure)
+        void read(int32_t &temperature, uint32_t &pressure)
         {
-            uint32_t t_fine;
-            temperature = readTemperature(t_fine);
-            pressure = readPressure(t_fine);
-        }
-    private:
-        float readTemperature(uint32_t& t_fine)
-        {
-            int32_t var1, var2;
-            int32_t adc_T = read24(TEMPDATA);
-            adc_T >>= 4;
-    
-            var1  = ((((adc_T>>3) - ((int32_t)calib_data.dig_T1 <<1))) *
-                    ((int32_t)calib_data.dig_T2)) >> 11;
-
-            var2  = (((((adc_T>>4) - ((int32_t)calib_data.dig_T1)) *
-                    ((adc_T>>4) - ((int32_t)calib_data.dig_T1))) >> 12) *
-                    ((int32_t)calib_data.dig_T3)) >> 14;
-
-           t_fine = var1 + var2;
-
-           float T  = (t_fine * 5 + 128) >> 8;
-   
-           return T/100;
+            std::array<uint8_t, 6> data;
+            readBytes(ADDR, PRESSUREDATA, 6, &data[0]);
+            int32_t adc_P = (int32_t(data[0]) << 12) | (int32_t(data[1]) << 4) | (int32_t(data[2])>>4);
+            int32_t adc_T = (int32_t(data[3]) << 12) | (int32_t(data[4]) << 4) | (int32_t(data[5])>>4);
+            temperature = bmp280_compensate_T_int32(adc_T);
+            pressure = bmp280_compensate_P_int64(adc_P);
         }
 
-        float readPressure(uint32_t t_fine) 
+    private: // Routines straight from BMP280 datasheet
+        using BMP280_S32_t = int32_t;
+        using BMP280_U32_t = uint32_t;
+        using BMP280_S64_t = int64_t;
+
+        // Returns temperature in DegC, resolution is 0.01 DegC. Output value of “5123” equals 51.23 DegC.
+        // t_fine carries fine temperature as global value
+        BMP280_S32_t t_fine;
+        BMP280_S32_t bmp280_compensate_T_int32(BMP280_S32_t adc_T)
         {
-            int64_t var1, var2, p;
+            BMP280_S32_t var1, var2, T;
+            var1 = ((((adc_T >> 3) - ((BMP280_S32_t)dig.t1 << 1))) * ((BMP280_S32_t)dig.t2)) >> 11;
+            var2 = (((((adc_T >> 4) - ((BMP280_S32_t)dig.t1)) * ((adc_T >> 4) - ((BMP280_S32_t)dig.t1))) >> 12) * ((BMP280_S32_t)dig.t3)) >> 14;
+            t_fine = var1 + var2;
+            T = (t_fine * 5 + 128) >> 8;
+            return T;
+        }
 
-            int32_t adc_P = read24(PRESSUREDATA);
-            adc_P >>= 4;
-
-            var1 = ((int64_t)t_fine) - 128000;
-            var2 = var1 * var1 * (int64_t)calib_data.dig_P6;
-            var2 = var2 + ((var1*(int64_t)calib_data.dig_P5)<<17);
-            var2 = var2 + (((int64_t)calib_data.dig_P4)<<35);
-            var1 = ((var1 * var1 * (int64_t)calib_data.dig_P3)>>8) +
-                   ((var1 * (int64_t)calib_data.dig_P2)<<12);
-
-            var1 = (((((int64_t)1)<<47)+var1))*((int64_t)calib_data.dig_P1)>>33;
-
+        // Returns pressure in Pa as unsigned 32 bit integer in Q24.8 format (24 integer bits and 8 fractional bits).
+        // Output value of “24674867” represents 24674867/256 = 96386.2 Pa = 963.862 hPa
+        BMP280_U32_t bmp280_compensate_P_int64(BMP280_S32_t adc_P)
+        {
+            BMP280_S64_t var1, var2, p;
+            var1 = ((BMP280_S64_t)t_fine) - 128000;
+            var2 = var1 * var1 * (BMP280_S64_t)dig.p6;
+            var2 = var2 + ((var1 * (BMP280_S64_t)dig.p5) << 17);
+            var2 = var2 + (((BMP280_S64_t)dig.p4) << 35);
+            var1 = ((var1 * var1 * (BMP280_S64_t)dig.p3) >> 8) + ((var1 * (BMP280_S64_t)dig.p2) << 12);
+            var1 = (((((BMP280_S64_t)1) << 47) + var1)) * ((BMP280_S64_t)dig.p1) >> 33;
             if (var1 == 0) {
-                return 0;  // avoid exception caused by division by zero
+                return 0; // avoid exception caused by division by zero
             }
-
             p = 1048576 - adc_P;
-            p = (((p<<31) - var2)*3125) / var1;
-            var1 = (((int64_t)calib_data.dig_P9) * (p>>13) * (p>>13)) >> 25;
-            var2 = (((int64_t)calib_data.dig_P8) * p) >> 19;
-
-            p = ((p + var1 + var2) >> 8) + (((int64_t)calib_data.dig_P7)<<4);
-
-            return (float)p/256;
+            p = (((p << 31) - var2) * 3125) / var1;
+            var1 = (((BMP280_S64_t)dig.p9) * (p >> 13) * (p >> 13)) >> 25;
+            var2 = (((BMP280_S64_t)dig.p8) * p) >> 19;
+            p = ((p + var1 + var2) >> 8) + (((BMP280_S64_t)dig.p7) << 4);
+            return (BMP280_U32_t)p;
         }
-
     };
-    
-    
-    
 
     Imu imu;
     Magnetometer mag;
@@ -504,49 +460,64 @@ namespace
     volatile int mag_valids = 0;
     volatile int imu_valids = 0;
     volatile int mag_ofs = 0;
-    void imuIsr() {
+    void imuIsr()
+    {
         bool mag_of;
         std::array<int16_t, 3> accel_data;
         std::array<int16_t, 3> gyro_data;
         std::array<int16_t, 3> mag_data;
         bool imu_valid = imu.read(accel_data, gyro_data);
         bool mag_valid = mag.read(mag_data, mag_of);
-        if (imu_valid) imu_valids++;
-        if (mag_valid) mag_valids++;
-        if (mag_valid && mag_of) mag_ofs++;
+        if (imu_valid)
+            imu_valids++;
+        if (mag_valid)
+            mag_valids++;
+        if (mag_valid && mag_of)
+            mag_ofs++;
         imu.readInterruptStatus();
         isr_calls++;
     }
 
-    auto& isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
-      int call_hertz = (isr_calls*1000) / delta;
-      int imu_valid_hertz = (imu_valids*1000) / delta;
-      int mag_valid_hertz = (mag_valids*1000) / delta;
-      logger.println(String("imuIsr called at ") + call_hertz + " Hz, imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
-      isr_calls = 0;
-      imu_valids = 0;
-      mag_valids = 0;
-      mag_ofs = 0;
-    });
-    
-/*
-    auto& imu_proc = events::makeProcess("imu").setPeriod(10).subscribe([&](unsigned long time, unsigned long delta) {
-        imu.update();
-        //logger.println(digitalRead(pins::MPU_INT));
-        //imu.readInterruptStatus();
-        //isr();
-    });
- */
-    
-} // anon
+    auto &isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
+        int call_hertz = (isr_calls * 1000) / delta;
+        int imu_valid_hertz = (imu_valids * 1000) / delta;
+        int mag_valid_hertz = (mag_valids * 1000) / delta;
+        logger.println(String("imuIsr called at ") + call_hertz + " Hz, imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
+        isr_calls = 0;
+        imu_valids = 0;
+        mag_valids = 0;
+        mag_ofs = 0;
 
+        // debug bmp280
+        int32_t t;
+        uint32_t p;
+        alt.read(t, p);
+        logger.println(String() + "Temperature: " + (t * 0.01f) + " degC, pressure: " + (p / 256.f) + " Pa");
+    });
+
+    /*
+    auto& imu_proc = events::makeProcess("imu").setPeriod(10).subscribe([&](unsigned long time, unsigned long delta) {
+    imu.update();
+    //logger.println(digitalRead(pins::MPU_INT));
+    //imu.readInterruptStatus();
+    //isr();
+    });
+    */
+
+} // anon
 
 namespace sensors
 {
 
     bool setup()
     {
-
+        imu.setBypass();
+        imu.sendReset();
+        delay(25);
+        imu.setBypass();
+        alt.sendReset();
+        delay(25);
+       
         // setup all my sensors
         bool imu_ok = imu.setup(); // sets pass-thru req for magnetometer etc
         bool mag_ok = mag.setup();
@@ -562,8 +533,7 @@ namespace sensors
         pinMode(pins::MPU_INT, INPUT);
         attachInterrupt(pins::MPU_INT, imuIsr, RISING);
         imu.readInterruptStatus();
-        
+
         return imu_ok && mag_ok && alt_ok;
     }
-    
 }
