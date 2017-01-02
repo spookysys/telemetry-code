@@ -2,7 +2,7 @@
 #include <algorithm>
 
 
-//#define DISABLE_WATCHDOG
+#define DISABLE_WATCHDOG
 
 
 // https://forum.arduino.cc/index.php?topic=366836.0

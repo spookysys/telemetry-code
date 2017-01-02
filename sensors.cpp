@@ -514,32 +514,24 @@ namespace sensors
 
     bool setup()
     {
-        delay(25);
-        watchdog::tickle();
         imu.sendReset();
         alt.sendReset();
         delay(25);
-        watchdog::tickle();
        
         // setup all my sensors
         bool imu_ok = imu.setup(); // sets pass-thru req for magnetometer etc
         assert(imu_ok);
-        watchdog::tickle();
         bool mag_ok = mag.setup();
         assert(mag_ok);
-        watchdog::tickle();
         bool alt_ok = alt.setup();
         assert(alt_ok);
-        watchdog::tickle();
 
         // perform scan
         I2CScan();
-        watchdog::tickle();
 
         // I use the MPU interrupt to drive realtime update for control
         pinMode(pins::MPU_INT, INPUT);
         attachInterrupt(pins::MPU_INT, imuIsr, RISING);
-        watchdog::tickle();
         
         return imu_ok && mag_ok && alt_ok;
     }

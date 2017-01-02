@@ -53,12 +53,10 @@ void setup() {
     // light LED while booting
     pinMode(pins::LED, OUTPUT);
     digitalWrite(pins::LED, true);
-    watchdog::tickle();
     
     // Init i2c
     Wire.begin();
     wireKhz(400);
-    watchdog::tickle();
     
     // Init serial
     SerialUSB.begin(9600);
@@ -69,22 +67,18 @@ void setup() {
         watchdog::tickle();
     }
     SerialUSB.println(String("Yo! ") + last_i);
-    watchdog::tickle();
         
     // Init modules
     bool sensors_ok = sensors::setup();
     assert(sensors_ok);
-    watchdog::tickle();
     bool telelink_ok = telelink::setup();
     assert(telelink_ok);
-    watchdog::tickle();
     
     // Indicate correct or errorenous operation by blinking
     common::assert_channel.subscribe([&](unsigned long time, const char* msg) {
         blink_process.setPeriod(100);
     });
     blink_process.setPeriod(1000);
-    watchdog::tickle();    
 }
 
 
