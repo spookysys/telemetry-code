@@ -16,12 +16,27 @@ namespace {
     val = !val;
   });
 
-  /*
+
+  float readBatteryVoltage()
+  {
+    static const auto VBAT_PIN = A7;
+    static const float ref_volt = 3.0f;
+    return analogRead(VBAT_PIN) * (ref_volt * 2.f / 1024.f);
+  }
+  
+  extern "C" char *sbrk(int i);
+  inline unsigned long freeRam ()
+  {
+    char stack_dummy = 0;
+    return &stack_dummy - sbrk(0);
+  }
+
+  
   events::Process& stats_process = events::makeProcess("stats").subscribe([&](unsigned long time, unsigned long delta) {
-    logger.println("Stats go here..");
-    // assert(!"Just testing assertions");
+    logger.println(String() + "Free RAM: " + freeRam() + ", Battery Voltage: " + readBatteryVoltage());
+    
   }).setPeriod(10000);
-  */
+  
 
 }
 

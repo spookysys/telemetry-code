@@ -513,8 +513,6 @@ namespace sensors
     {
         imu.setBypass();
         imu.sendReset();
-        delay(25);
-        imu.setBypass();
         alt.sendReset();
         delay(25);
        
