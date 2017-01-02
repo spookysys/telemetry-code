@@ -320,20 +320,20 @@ namespace
     Magnetometer magnetometer;
     Altimeter altimeter;
 
-    /*
     void imuIsr() {
         imu.update();
+        logger.write('.');
         imu.readInterruptStatus();
     }
-    */
 
+/*
     auto& imu_proc = events::makeProcess("imu").setPeriod(10).subscribe([&](unsigned long time, unsigned long delta) {
         imu.update();
         //logger.println(digitalRead(pins::MPU_INT));
         //imu.readInterruptStatus();
         //isr();
     });
- 
+ */
     
 } // anon
 
@@ -354,8 +354,8 @@ namespace sensors
         assert(alt_ok);
 
         // I use the MPU interrupt to drive realtime update for control
-        //pinMode(pins::MPU_INT, INPUT);
-        //attachInterrupt(pins::MPU_INT, imuIsr, RISING);
+        pinMode(pins::MPU_INT, INPUT);
+        attachInterrupt(pins::MPU_INT, imuIsr, RISING);
                 
         return imu_ok && mag_ok && alt_ok;
     }
