@@ -363,6 +363,10 @@ namespace
         };
 
     public:
+        static float getAltitude(float pressurePa, float seaLevelhPa=1013.25f) {
+          return 44330 * (1.0 - pow(pressurePa / (seaLevelhPa*100), 0.1903));
+        }
+
         void sendReset()
         {
             writeByte(ADDR, RESET, 0xB6);          
@@ -463,16 +467,19 @@ namespace
     volatile int alt_valids = 0;
     volatile int mag_ofs = 0;
 
+    std::array<int16_t, 3> accel_data;
+    std::array<int16_t, 3> gyro_data;
+    std::array<int16_t, 3> mag_data;
+    int32_t alt_t;
+    uint32_t alt_p;
+
     void imuIsr() 
     {
         // Read IMU (accel/gyro)
-        std::array<int16_t, 3> accel_data;
-        std::array<int16_t, 3> gyro_data;
         bool imu_valid = imu.read(accel_data, gyro_data);
 
         // Read Magnetometer
         bool mag_of;
-        std::array<int16_t, 3> mag_data;
         bool mag_valid = mag.read(mag_data, mag_of);
 
         // Determine alt_valid
@@ -482,8 +489,6 @@ namespace
         else alt_counter--;
 
         // Read Altimeter
-        int32_t alt_t;
-        uint32_t alt_p;
         if (alt_valid) alt.read(alt_t, alt_p);
 
         // Collect Stats
@@ -496,14 +501,17 @@ namespace
         //imu.readInterruptStatus();
     }
 
-    auto &isr_stats_process = events::makeProcess("isr_stats").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
+    auto &isr_stats_process = events::makeProcess("isr_stats").setPeriod(1000).subscribe([&](unsigned long time, unsigned long delta) {
         logger.println(String("imuIsr called at ") + (isr_calls*1000)/delta + " Hz, isr_calls: " + isr_calls + ", imu_valids: " + imu_valids + " Hz, mag_valids: " + mag_valids + " Hz, alt_valids: " + alt_valids + ", mag_ofs: " + mag_ofs);
         isr_calls = 0;
         imu_valids = 0;
         mag_valids = 0;
         alt_valids = 0;
         mag_ofs = 0;
-        //logger.println(String() + "Temperature: " + (t * 0.01f) + " degC, pressure: " + (p / 256.f) + " Pa");
+
+        float altitude = Altimeter::getAltitude(alt_p / 256.f);
+        logger.println(String() + "Temperature: " + (alt_t * 0.01f) + " degC, pressure: " + (alt_p / 256.f) + " Pa, altitude: " + altitude + " m");
+
     });
 
     /*
