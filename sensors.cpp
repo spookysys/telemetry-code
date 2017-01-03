@@ -457,51 +457,53 @@ namespace
     Magnetometer mag;
     Altimeter alt;
 
-    volatile int channel_calls = 0;
+    volatile int isr_calls = 0;
     volatile int mag_valids = 0;
     volatile int imu_valids = 0;
+    volatile int alt_valids = 0;
     volatile int mag_ofs = 0;
 
-    auto read_sensors_channel = events::makeChannel<>("read_sensors").subscribe([&](unsigned long time) {
-        bool mag_of;
+    void imuIsr() 
+    {
+        // Read IMU (accel/gyro)
         std::array<int16_t, 3> accel_data;
         std::array<int16_t, 3> gyro_data;
-        std::array<int16_t, 3> mag_data;
         bool imu_valid = imu.read(accel_data, gyro_data);
-        bool mag_valid = mag.read(mag_data, mag_of);
-        if (imu_valid)
-            imu_valids++;
-        if (mag_valid)
-            mag_valids++;
-        if (mag_valid && mag_of)
-            mag_ofs++;
-        //imu.readInterruptStatus();
-        channel_calls++;
-    });
 
-    volatile int isr_calls = 0;
-    void imuIsr()
-    {
-      isr_calls++;
-      read_sensors_channel.publish();
+        // Read Magnetometer
+        bool mag_of;
+        std::array<int16_t, 3> mag_data;
+        bool mag_valid = mag.read(mag_data, mag_of);
+
+        // Determine alt_valid
+        static int alt_counter = 0;
+        bool alt_valid = (alt_counter<=0);
+        if (alt_valid) alt_counter = 3;
+        else alt_counter--;
+
+        // Read Altimeter
+        int32_t alt_t;
+        uint32_t alt_p;
+        if (alt_valid) alt.read(alt_t, alt_p);
+
+        // Collect Stats
+        isr_calls++;
+        if (imu_valid) imu_valids++;
+        if (mag_valid) mag_valids++;
+        if (alt_valid) alt_valids++;
+        if (mag_valid && mag_of) mag_ofs++;
+        
+        //imu.readInterruptStatus();
     }
 
-    auto &isr_rate_counter = events::makeProcess("imu").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
-        int call_hertz = (isr_calls * 1000) / delta;
-        int imu_valid_hertz = (imu_valids * 1000) / delta;
-        int mag_valid_hertz = (mag_valids * 1000) / delta;
-        logger.println(String("imuIsr called at ") + call_hertz + " Hz, isr_calls-channel_calls: " + (isr_calls-channel_calls) + ", imu_valid: " + imu_valid_hertz + " Hz, mag_valid: " + mag_valid_hertz + " Hz, mag_ofs: " + mag_ofs);
+    auto &isr_stats_process = events::makeProcess("isr_stats").setPeriod(10000).subscribe([&](unsigned long time, unsigned long delta) {
+        logger.println(String("imuIsr called at ") + (isr_calls*1000)/delta + " Hz, isr_calls: " + isr_calls + ", imu_valids: " + imu_valids + " Hz, mag_valids: " + mag_valids + " Hz, alt_valids: " + alt_valids + ", mag_ofs: " + mag_ofs);
         isr_calls = 0;
-        channel_calls = 0;
         imu_valids = 0;
         mag_valids = 0;
+        alt_valids = 0;
         mag_ofs = 0;
-
-        // debug bmp280
-        int32_t t;
-        uint32_t p;
-        alt.read(t, p);
-        logger.println(String() + "Temperature: " + (t * 0.01f) + " degC, pressure: " + (p / 256.f) + " Pa");
+        //logger.println(String() + "Temperature: " + (t * 0.01f) + " degC, pressure: " + (p / 256.f) + " Pa");
     });
 
     /*

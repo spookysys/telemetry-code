@@ -125,4 +125,6 @@ namespace events
 
 void loop() {    
     events::loop();
+    delay(100);
 }
+
