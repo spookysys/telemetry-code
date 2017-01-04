@@ -6,9 +6,14 @@ namespace regtek
 {
     Stream& logger = SerialUSB;
 
-    auto& plot_channel = events::makeChannel<const std::array<int16_t, 3>&>("plot").subscribe([&](unsigned long time, const std::array<int16_t, 3>& mag){
-        logger.println(String() + mag[0] + "\t" + mag[1] + "\t" + mag[2]);
-        delay(2);
+    static const int num_vals = 3;
+
+    auto& plot_channel = events::makeChannel<const std::array<int32_t, num_vals>&>("plot").subscribe([&](unsigned long time, const std::array<int32_t, num_vals>& v){
+        for (auto& iter : v) {
+            logger.print(iter);
+            logger.print("\t");
+        }
+        logger.println();
     });
 
 
@@ -19,7 +24,7 @@ namespace regtek
         const std::array<int16_t, 3>& imu_gyro,
         bool mag_valid,
         bool mag_of,
-        const std::array<int16_t, 3>& mag,
+        const std::array<int32_t, 3>& mag,
         bool alt_valid,
         const uint32_t& alt_p,
         const int32_t& alt_t

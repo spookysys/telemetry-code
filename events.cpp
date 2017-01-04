@@ -108,8 +108,8 @@ namespace events
         
         noInterrupts();
 
-        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-        logger.println();
+        //for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        //logger.println();
         
         // run events and flag executed ones as invalid
         for (int i = 0; i < (int)channel_events().size(); ) {
@@ -125,8 +125,8 @@ namespace events
             }
         }
         
-        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-        logger.println();
+        //for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        //logger.println();
 
         // compact the list, removing invalid events
         {
@@ -141,11 +141,11 @@ namespace events
             for (auto& iter : channel_events()) assert(iter.valid);
         }
 
-        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-        logger.println();
+        //for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        //logger.println();
 
         interrupts();
-        logger.println();
+        //logger.println();
 
         for (auto& iter : processes()) {
             iter->runIfNeeded(time);
@@ -157,6 +157,6 @@ namespace events
 
 void loop() {    
     events::loop();
-    for (int i=0; i<30; i++) delay(10);
+    for (int i=0; i<10; i++) delay(10);
 }
 

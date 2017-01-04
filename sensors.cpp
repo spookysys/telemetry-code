@@ -274,10 +274,14 @@ namespace
         static const uint8_t ASAZ = 0x12;   // Fuse ROM z-axis sensitivity adjustment value
 
     private:
-        // Scale adjustment values (checkme - should there be an intended overflow here?)
+        // Scale adjustment values 
         // adjust_f[0] = float(int(adjust[0]) - 128) / 256.f + 1.f;
         // adjust_f[1] = float(int(adjust[1]) - 128) / 256.f + 1.f;
         // adjust_f[2] = float(int(adjust[2]) - 128) / 256.f + 1.f;
+        // Fixed point i:8
+        // adjust_x[0] = int(adjust[0]) - 128 + 256;
+        // adjust_x[1] = int(adjust[1]) - 128 + 256;
+        // adjust_x[2] = int(adjust[2]) - 128 + 256;
         std::array<uint8_t, 3> adjust;
 
     public:
@@ -300,6 +304,7 @@ namespace
             readBytes(ADDR, ASAX, 3, &adjust[0]); // Read the x-, y-, and z-axis calibration values
             writeByte(ADDR, CNTL, 0x00);          // Power down magnetometer
             delay(10);
+            for (auto& iter : adjust) logger.println(iter);
             // Configure the magnetometer for continuous read and highest resolution
             // set Mscale bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL register,
             // and enable continuous mode data acquisition Mmode (bits [3:0]), 0010 for 8 Hz and 0110 for 100 Hz sample rates
@@ -314,19 +319,35 @@ namespace
             return readByte(ADDR, ST1) & 0x01;
         }
 
-        bool read(std::array<int16_t, 3> &res, bool &overflow)
+        bool read(std::array<int32_t, 3> &res, bool &overflow)
         {
-            if (!newData())
-                return false;
-            std::array<uint8_t, 7> rawData;
-            readBytes(ADDR, XOUT_L, 7, &rawData[0]); // Read the six raw data and ST2 registers sequentially into data array
-            overflow = rawData[6] & 0x08;
-            res[0] = (int16_t(rawData[1]) << 8) | rawData[0]; // Turn the MSB and LSB into a signed 16-bit value
-            res[1] = (int16_t(rawData[3]) << 8) | rawData[2]; // Data stored as little Endian
-            res[2] = (int16_t(rawData[5]) << 8) | rawData[4];
-            // flip axes to match gyro/accel (see MPU-9250 Product Specification chapter "Orientation of Axes"
-            std::swap(res[0], res[1]);
-            res[2] = -res[2];
+            // return false if no new data
+            if (!newData()) return false;
+
+            // read out values
+            std::array<uint8_t, 7> raw;
+            readBytes(ADDR, XOUT_L, 7, &raw[0]); // Read the six raw data and ST2 registers sequentially into data array
+
+            // combine bytes
+            std::array<int32_t, 3> tmp;
+            tmp[0] = int16_t((uint16_t(raw[1]) << 8) | raw[0]); // Turn the MSB and LSB into a signed 16-bit value
+            tmp[1] = int16_t((uint16_t(raw[3]) << 8) | raw[2]); // Data stored as little Endian
+            tmp[2] = int16_t((uint16_t(raw[5]) << 8) | raw[4]);
+
+            // scale by factory-provided values (see MPU-9250 Register Map under "Sensitivity Adjustment")
+            tmp[0] *= int(adjust[0]) + 128;
+            tmp[1] *= int(adjust[1]) + 128;
+            tmp[2] *= int(adjust[2]) + 128;
+            
+            // flip axes to match gyro/accel (see MPU-9250 Product Specification under "Orientation of Axes")
+            std::swap(tmp[0], tmp[1]);
+            tmp[2] = -tmp[2];
+
+            // write result
+            res[0] = tmp[0];
+            res[1] = tmp[1];
+            res[2] = tmp[2];
+            overflow = raw[6] & 0x08;
             return true;
         }
     };
@@ -470,7 +491,7 @@ namespace
 
     std::array<int16_t, 3> accel_data;
     std::array<int16_t, 3> gyro_data;
-    std::array<int16_t, 3> mag_data;
+    std::array<int32_t, 3> mag_data;
     int32_t alt_t;
     uint32_t alt_p;
 
