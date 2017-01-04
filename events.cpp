@@ -1,13 +1,17 @@
 #include "events.hpp"
 #include "watchdog.hpp"
 #include <vector>
+#include <algorithm>
 using namespace std;
 
 namespace events
 {
+    Stream& logger = Serial;
+
     class ProcessImpl;
 
     struct ChannelEvent {
+        bool valid;
         const BaseChannel* channel;
         unsigned long time;
         function<void(unsigned long)> callbackCaller;
@@ -82,7 +86,7 @@ namespace events
     // Due to use of templates, we need to expose some implementation detail here
     void BaseChannel::publishImpl(unsigned long time, function<void(unsigned long)> cbCaller)
     {
-        ChannelEvent value = {this, time, cbCaller};
+        ChannelEvent value = {true, this, time, cbCaller};
         noInterrupts();
         channel_events().emplace_back(value);
         interrupts();
@@ -101,30 +105,58 @@ namespace events
     void loop()
     {
         unsigned long time = millis();
+        
         noInterrupts();
+
+        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        logger.println();
+        
+        // run events and flag executed ones as invalid
         for (int i = 0; i < (int)channel_events().size(); ) {
             auto& item_ref = channel_events()[i];
-            if (time >= item_ref.time) {
-                item_ref = channel_events().back();
-                channel_events().pop_back();
+            if (item_ref.valid && time >= item_ref.time) {
                 auto callbackCaller = item_ref.callbackCaller;
-                interrupts();
+                item_ref.valid = false;
+                interrupts(); // item_ref could now get clobbered
                 callbackCaller(time);
                 noInterrupts();
             } else {
                 i++;
             }
         }
+        
+        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        logger.println();
+
+        // compact the list, removing invalid events
+        {
+            auto r = channel_events().begin();
+            auto w = channel_events().begin();
+            while (1) {
+                while (r!=channel_events().end() && !r->valid) r++;
+                if (r==channel_events().end()) break;
+                w++ = r++;
+            }
+            channel_events().resize(w-channel_events().begin());
+            for (auto& iter : channel_events()) assert(iter.valid);
+        }
+
+        for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
+        logger.println();
+
         interrupts();
+        logger.println();
+
         for (auto& iter : processes()) {
             iter->runIfNeeded(time);
         }
+
         watchdog::tickle();
     }
 }
 
 void loop() {    
     events::loop();
-    delay(100);
+    for (int i=0; i<30; i++) delay(10);
 }
 

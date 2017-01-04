@@ -41,7 +41,7 @@ namespace {
 
 
   events::Process& stats_process = events::makeProcess("stats").subscribe([&](unsigned long time, unsigned long delta) {
-    logger.println(String() + "Free RAM: " + freeRam() + ", Voltage: " + readBatteryVoltage());
+    //logger.println(String() + "Free RAM: " + freeRam() + ", Voltage: " + readBatteryVoltage());
   }).setPeriod(10000);
 
 }

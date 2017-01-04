@@ -2,9 +2,10 @@
 #include "pins.hpp"
 #include "events.hpp"
 #include "watchdog.hpp"
+#include "regtek.hpp"
 #include <Wire.h>
 #include <array>
-#include "wiring_private.h" // pinPeripheral() function
+
 
 namespace
 {
@@ -498,11 +499,22 @@ namespace
         if (alt_valid) alt_valids++;
         if (mag_valid && mag_of) mag_ofs++;
         
+        regtek::sensorUpdate(
+            imu_valid, 
+            accel_data,
+            gyro_data,
+            mag_valid,
+            mag_of,
+            mag_data,
+            alt_valid,
+            alt_p,
+            alt_t
+        );
         //imu.readInterruptStatus();
     }
 
     auto &isr_stats_process = events::makeProcess("isr_stats").setPeriod(1000).subscribe([&](unsigned long time, unsigned long delta) {
-        logger.println(String("imuIsr called at ") + (isr_calls*1000)/delta + " Hz, isr_calls: " + isr_calls + ", imu_valids: " + imu_valids + " Hz, mag_valids: " + mag_valids + " Hz, alt_valids: " + alt_valids + ", mag_ofs: " + mag_ofs);
+        //logger.println(String("imuIsr called at ") + (isr_calls*1000)/delta + " Hz, isr_calls: " + isr_calls + ", imu_valids: " + imu_valids + " Hz, mag_valids: " + mag_valids + " Hz, alt_valids: " + alt_valids + ", mag_ofs: " + mag_ofs);
         isr_calls = 0;
         imu_valids = 0;
         mag_valids = 0;
@@ -510,7 +522,7 @@ namespace
         mag_ofs = 0;
 
         float altitude = Altimeter::getAltitude(alt_p / 256.f);
-        logger.println(String() + "Temperature: " + (alt_t * 0.01f) + " degC, pressure: " + (alt_p / 256.f) + " Pa, altitude: " + altitude + " m");
+        //logger.println(String() + "Temperature: " + (alt_t * 0.01f) + " degC, pressure: " + (alt_p / 256.f) + " Pa, altitude: " + altitude + " m");
 
     });
 
