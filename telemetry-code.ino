@@ -3,6 +3,7 @@
 #include "sensors.hpp"
 #include "telelink.hpp"
 #include "events.hpp"
+#include "regtek.hpp"
 #include "watchdog.hpp"
 #include <Wire.h>
 
@@ -69,7 +70,7 @@ void setup() {
     SerialUSB.println(String("Yo! ") + last_i);
         
     // Init modules
-    bool sensors_ok = sensors::setup();
+    bool sensors_ok = sensors::setup(regtek::sensorUpdate);
     assert(sensors_ok);
     bool telelink_ok = telelink::setup();
     assert(telelink_ok);

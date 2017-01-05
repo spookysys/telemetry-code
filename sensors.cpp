@@ -6,6 +6,7 @@
 #include <Wire.h>
 #include <array>
 
+using namespace sensors;
 
 namespace
 {
@@ -483,66 +484,56 @@ namespace
     Magnetometer mag;
     Altimeter alt;
 
-    volatile int isr_calls = 0;
-    volatile int mag_valids = 0;
-    volatile int imu_valids = 0;
-    volatile int alt_valids = 0;
-    volatile int mag_ofs = 0;
+    SensorData data;
 
-    std::array<int16_t, 3> accel_data;
-    std::array<int16_t, 3> gyro_data;
-    std::array<int32_t, 3> mag_data;
-    int32_t alt_t;
-    uint32_t alt_p;
+    struct SensorStats
+    {
+        int isr_calls = 0;
+        int mag_valids = 0;
+        int imu_valids = 0;
+        int alt_valids = 0;
+        int mag_ofs = 0;
+    };
+    volatile SensorStats stats;
+
+    static void (*sensorDataCallback)(const SensorData&);
 
     void imuIsr() 
     {
         // Read IMU (accel/gyro)
-        bool imu_valid = imu.read(accel_data, gyro_data);
+        data.imu_valid = imu.read(data.imu_accel, data.imu_gyro);
 
         // Read Magnetometer
-        bool mag_of;
-        bool mag_valid = mag.read(mag_data, mag_of);
+        data.mag_valid = mag.read(data.mag_data, data.mag_of);
 
         // Determine alt_valid
         static int alt_counter = 0;
-        bool alt_valid = (alt_counter<=0);
-        if (alt_valid) alt_counter = 3;
+        data.alt_valid = (alt_counter<=0);
+        if (data.alt_valid) alt_counter = 3;
         else alt_counter--;
 
         // Read Altimeter
-        if (alt_valid) alt.read(alt_t, alt_p);
+        if (data.alt_valid) alt.read(data.alt_t, data.alt_p);
 
         // Collect Stats
-        isr_calls++;
-        if (imu_valid) imu_valids++;
-        if (mag_valid) mag_valids++;
-        if (alt_valid) alt_valids++;
-        if (mag_valid && mag_of) mag_ofs++;
+        stats.isr_calls++;
+        if (data.imu_valid) stats.imu_valids++;
+        if (data.mag_valid) stats.mag_valids++;
+        if (data.alt_valid) stats.alt_valids++;
+        if (data.mag_valid && data.mag_of) stats.mag_ofs++;
         
-        regtek::sensorUpdate(
-            imu_valid, 
-            accel_data,
-            gyro_data,
-            mag_valid,
-            mag_of,
-            mag_data,
-            alt_valid,
-            alt_p,
-            alt_t
-        );
+        // callback with sensor data
+        sensorDataCallback(data);
+
+        // no need, since interrupt line pulses for 50 ms
         //imu.readInterruptStatus();
     }
 
     auto &isr_stats_process = events::makeProcess("isr_stats").setPeriod(1000).subscribe([&](unsigned long time, unsigned long delta) {
         //logger.println(String("imuIsr called at ") + (isr_calls*1000)/delta + " Hz, isr_calls: " + isr_calls + ", imu_valids: " + imu_valids + " Hz, mag_valids: " + mag_valids + " Hz, alt_valids: " + alt_valids + ", mag_ofs: " + mag_ofs);
-        isr_calls = 0;
-        imu_valids = 0;
-        mag_valids = 0;
-        alt_valids = 0;
-        mag_ofs = 0;
+        //stats = SensorStats{};
 
-        float altitude = Altimeter::getAltitude(alt_p / 256.f);
+        float altitude = Altimeter::getAltitude(data.alt_p / 256.f);
         //logger.println(String() + "Temperature: " + (alt_t * 0.01f) + " degC, pressure: " + (alt_p / 256.f) + " Pa, altitude: " + altitude + " m");
 
     });
@@ -563,14 +554,18 @@ namespace
 namespace sensors
 {
 
-    bool setup()
+    bool setup(void (*isrCallback)(const SensorData&))
     {
+        // set callback
+        ::sensorDataCallback = isrCallback;
+
+        // soft resets
         imu.sendReset();
         alt.sendReset();
         delay(25);
        
         // setup all my sensors
-        bool imu_ok = imu.setup(); // sets pass-thru req for magnetometer etc
+        bool imu_ok = imu.setup(); // call first - sets pass-thru req for magnetometer etc
         assert(imu_ok);
         bool mag_ok = mag.setup();
         assert(mag_ok);
@@ -580,10 +575,11 @@ namespace sensors
         // perform scan
         I2CScan();
 
-        // I use the MPU interrupt to drive realtime update for control
+        // I use the MPU interrupt to drive realtime update
         pinMode(pins::MPU_INT, INPUT);
         attachInterrupt(pins::MPU_INT, imuIsr, RISING);
-        
+
+        // return success
         return imu_ok && mag_ok && alt_ok;
     }
 }

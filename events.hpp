@@ -10,10 +10,13 @@ namespace events
     class Process
     {
     public:
-        virtual Process& subscribe(std::function<void(unsigned long, unsigned long)>&& cb) = 0;
+        virtual Process& subscribe(std::function<void(unsigned long, unsigned long)>&& callback) = 0;
         virtual Process& setPeriod(long long period) = 0;
     };
 
+
+
+    extern Process& makeProcess(const char* name);
 
 
     // Due to use of templates, we need to expose some implementation detail here
@@ -40,7 +43,7 @@ namespace events
     public:
         Channel(const char* name) : BaseChannel(name) {}
         
-        Channel<Params...>& subscribe(std::function<void(unsigned long, Params...)>&& callback);
+        Channel<Params...>& subscribe(void (*callback)(unsigned long, Params...));
         
         Channel<Params...>& publish(long long time, Params... params);
         Channel<Params...>& publish(Params... params);
@@ -48,9 +51,9 @@ namespace events
 
 
     template<typename ... Params>
-    Channel<Params...>& Channel<Params...>::subscribe(std::function<void(unsigned long, Params...)>&& callback)
+    Channel<Params...>& Channel<Params...>::subscribe(void (*callback)(unsigned long, Params...))
     {
-        callbacks.push_back(std::move(callback));
+        callbacks.push_back(callback);
         return *this;
     }
     
@@ -69,10 +72,9 @@ namespace events
     }
 
 
-    extern Process& makeProcess(const char* name);
-
     template<typename ... Params>
-    static Channel<Params...>& makeChannel(const char* name) {
+    static Channel<Params...>& makeChannel(const char* name) 
+    {
         return *new Channel<Params...>(name);
     }
 
