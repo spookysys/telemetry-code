@@ -6,8 +6,9 @@ namespace sensors
 {
     struct SensorData {
         bool imu_valid = false;
-        std::array<int16_t, 3> imu_accel{};
-        std::array<int16_t, 3> imu_gyro{};
+        uint8_t gyro_of = 0; 
+        std::array<int32_t, 3> accel_data{};
+        std::array<int32_t, 3> gyro_data{};
         bool mag_valid = false;
         bool mag_of = false;
         std::array<int32_t, 3> mag_data{};

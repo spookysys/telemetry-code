@@ -5,7 +5,11 @@
 #include "events.hpp"
 #include "regtek.hpp"
 #include "watchdog.hpp"
+#include "calibrate.hpp"
 #include <Wire.h>
+
+//#define CALIBRATE
+
 
 namespace {
   Stream& logger = Serial;
@@ -70,7 +74,11 @@ void setup() {
     SerialUSB.println(String("Yo! ") + last_i);
         
     // Init modules
+    #ifdef CALIBRATE
+    bool sensors_ok = sensors::setup(calibrate::sensorUpdate);
+    #else
     bool sensors_ok = sensors::setup(regtek::sensorUpdate);
+    #endif
     assert(sensors_ok);
     bool telelink_ok = telelink::setup();
     assert(telelink_ok);
