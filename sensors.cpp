@@ -291,14 +291,10 @@ namespace
         static const uint8_t ASAZ = 0x12;   // Fuse ROM z-axis sensitivity adjustment value
 
     private:
-        // Scale adjustment values 
-        // adjust_f[0] = float(int(adjust[0]) - 128) / 256.f + 1.f;
-        // adjust_f[1] = float(int(adjust[1]) - 128) / 256.f + 1.f;
-        // adjust_f[2] = float(int(adjust[2]) - 128) / 256.f + 1.f;
         // Fixed point i:8
-        // adjust_x[0] = int(adjust[0]) - 128 + 256;
-        // adjust_x[1] = int(adjust[1]) - 128 + 256;
-        // adjust_x[2] = int(adjust[2]) - 128 + 256;
+        // adjust_x[0] = int(adjust[0]) + 128;
+        // adjust_x[1] = int(adjust[1]) + 128;
+        // adjust_x[2] = int(adjust[2]) + 128;
         std::array<uint8_t, 3> adjust;
 
     public:
@@ -313,15 +309,10 @@ namespace
                 ok = false;
             }
 
-            // First extract the factory calibration for each magnetometer axis
-            writeByte(ADDR, CNTL, 0x00); // Power down magnetometer
+            // Power down magnetometer
+            writeByte(ADDR, CNTL, 0x00);          
             delay(10);
-            writeByte(ADDR, CNTL, 0x0F); // Enter Fuse ROM access mode
-            delay(10);
-            readBytes(ADDR, ASAX, 3, &adjust[0]); // Read the x-, y-, and z-axis calibration values
-            writeByte(ADDR, CNTL, 0x00);          // Power down magnetometer
-            delay(10);
-            for (auto& iter : adjust) logger.println(iter);
+
             // Configure the magnetometer for continuous read and highest resolution
             // set Mscale bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL register,
             // and enable continuous mode data acquisition Mmode (bits [3:0]), 0010 for 8 Hz and 0110 for 100 Hz sample rates
@@ -350,12 +341,7 @@ namespace
             tmp[0] = int16_t((uint16_t(raw[1]) << 8) | raw[0]); // Turn the MSB and LSB into a signed 16-bit value
             tmp[1] = int16_t((uint16_t(raw[3]) << 8) | raw[2]); // Data stored as little Endian
             tmp[2] = int16_t((uint16_t(raw[5]) << 8) | raw[4]);
-
-            // scale by factory-provided values (see MPU-9250 Register Map under "Sensitivity Adjustment")
-            tmp[0] *= int(adjust[0]) + 128;
-            tmp[1] *= int(adjust[1]) + 128;
-            tmp[2] *= int(adjust[2]) + 128;
-            
+           
             // flip axes to match gyro/accel (see MPU-9250 Product Specification under "Orientation of Axes")
             std::swap(tmp[0], tmp[1]);
             tmp[2] = -tmp[2];
