@@ -8,6 +8,9 @@
         "pythonPath": "${config.python.pythonPath}",
         "program": "${file}",
         "cwd": "${workspaceRoot}/sensor-calibration",
+        "args": [
+            "calibration_data_1.json"
+        ],
         "debugOptions": [
             "WaitOnAbnormalExit",
             "WaitOnNormalExit",
