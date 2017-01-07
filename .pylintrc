@@ -11,4 +11,4 @@
 # --disable=W"
 # disable=zip-builtin-not-iterating,xrange-builtin,old-division,no-absolute-import,reduce-builtin,basestring-builtin,using-cmp-argument,execfile-builtin,coerce-method,round-builtin,range-builtin-not-iterating,suppressed-message,map-builtin-not-iterating,hex-method,cmp-method,apply-builtin,long-suffix,old-raise-syntax,getslice-method,raising-string,input-builtin,unichr-builtin,cmp-builtin,next-method-called,dict-iter-method,delslice-method,old-ne-operator,unpacking-in-except,oct-method,reload-builtin,unicode-builtin,metaclass-assignment,parameter-unpacking,indexing-exception,import-star-module-level,standarderror-builtin,intern-builtin,long-builtin,useless-suppression,old-octal-literal,backtick,filter-builtin-not-iterating,dict-view-method,buffer-builtin,nonzero-method,file-builtin,coerce-builtin,setslice-method,print-statement,raw_input-builtin
 
-disable=C0103, R0914, C0111, W0612
+disable=C0103, R0914, C0111, W0612, W0621
