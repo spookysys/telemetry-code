@@ -26,6 +26,14 @@ def load_input():
 
 
 
+def adjust(vec, offset, scale):
+    vec = np.array(vec)
+    offset = np.array(offset)
+    scale = np.array(scale)
+    return ((vec - offset) / scale).tolist()
+
+
+
 def analyze_mag_accel(vecs):
     vec_x = [item[0] for item in vecs]
     vec_y = [item[1] for item in vecs]
@@ -34,21 +42,14 @@ def analyze_mag_accel(vecs):
     return {'offset': offset, 'scale': scale}
 
 
+
+
 def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
     assert len(gyro_raw) == len(accel_fitted)
     assert len(accel_fitted) == len(mag_fitted, gyro_raw)
 
-
-
-
-
-def adjust(vec, offset, scale):
-    vec = np.array(vec)
-    offset = np.array(offset)
-    scale = np.array(scale)
-    return ((vec - offset) / scale).tolist()
-
-
+    for i in range(len(gyro_raw)-1):
+        
 
 
 
