@@ -14,7 +14,13 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from transforms3d import axangles
 
+import affine_fit
 import ellipsoid_fit as ellipsoid_fit_py
+
+
+# settings
+sample_hz = 10
+target_hz = 200
 
 
 def load_input():
@@ -61,6 +67,7 @@ def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
             accel_fitted[f+1], mag_fitted[f+1]
         )
         (expected_axis, expected_angle) = axangles.mat2axangle(expected_rot_mat)
+        expected_angle *= sample_hz / target_hz
         expected.append((expected_axis * expected_angle).tolist())
 
         observed_axis = normalize(normalize(gyro_raw[f]) + normalize(gyro_raw[f+1]))
@@ -104,6 +111,9 @@ accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
 (gyro_expected, gyro_observed) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
+yo = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
+print(yo.To_Str())
+gyro_fitted = [yo.Transform(vec) for vec in gyro_raw]
 
 
 gl_anim = 0
@@ -156,53 +166,74 @@ def gl_display():
     glColor3fv([1, 1, 1])
     glutWireCube(2)
 
+    draw_accel_mag_cloud = False
+    draw_gyro_cloud = True
+    draw_axes = False
+    draw_static_accel_mag = False
+    draw_rotation = False
+
+
     # Draw mag and accel strips
-    for i in range(2):
-        alpha = 1
-        glPointSize(1)
-        glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
-        glBegin(GL_POINTS)
-        for p in [accel_fitted, mag_fitted][i]:
-            glVertex(p)
+    if draw_accel_mag_cloud:
+        for i in range(2):
+            alpha = 1
+            glPointSize(3)
+            glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
+            glBegin(GL_POINTS)
+            for p in [accel_fitted, mag_fitted][i]:
+                glVertex(p)
+            glEnd()
+
+    # Draw mag and accel strips
+    if draw_gyro_cloud:
+        scale = target_hz / 10
+        for i in range(2):
+            alpha = 1
+            glPointSize(3)
+            glColor([[1, 0, 1, alpha], [0, 1, 1, alpha]][i])
+            glBegin(GL_POINTS)
+            for p in [gyro_fitted, gyro_expected][i]:
+                glVertex(np.array(p) * scale)
+            glEnd()
+
+    if draw_static_accel_mag:
+        glLineWidth(1)
+        glBegin(GL_LINES)
+        glColor(1, 0, 0)
+        glVertex(0, 0, 0)
+        glVertex(accel_vec)
+        glColor(0, 1, 0)
+        glVertex(0, 0, 0)
+        glVertex(mag_vec)
         glEnd()
 
-    # Draw axes and mag/accel lines
-    glLineWidth(1)
-    glBegin(GL_LINES)
-    glColor(1, 0, 0)
-    glVertex(0, 0, 0)
-    glVertex(accel_vec)
-    glColor(0, 1, 0)
-    glVertex(0, 0, 0)
-    glVertex(mag_vec)
-    glEnd()
+    if draw_axes:
+        glLineWidth(4)
+        glBegin(GL_LINES)
+        glColor(1, 0, 0)
+        glVertex(0, 0, 0)
+        glVertex(axes[0])
+        glColor(0, 1, 0)
+        glVertex(0, 0, 0)
+        glVertex(axes[1])
+        glColor(0, 0, 1)
+        glVertex(0, 0, 0)
+        glVertex(axes[2])
+        glEnd()
 
-    glLineWidth(4)
-    glBegin(GL_LINES)
-    glColor(1, 0, 0)
-    glVertex(0, 0, 0)
-    glVertex(axes[0])
-    glColor(0, 1, 0)
-    glVertex(0, 0, 0)
-    glVertex(axes[1])
-    glColor(0, 0, 1)
-    glVertex(0, 0, 0)
-    glVertex(axes[2])
-    glEnd()
-
-    # Draw gyro line
-    glLineWidth(4)
-    glBegin(GL_LINES)
-    glColor(1, 1, .5, 1)
-    glVertex(0, 0, 0)
-    both_scale = 1 / 10
-    expected_scale = 10 # 10 hz sample rate
-    glVertex(np.array(gyro_expected[f]) * expected_scale * both_scale)
-    glColor(1, .5, 1, 1)
-    glVertex(0, 0, 0)
-    gyro_scale = 250 / 2**15 / 180 * math.pi # 250 degrees per second
-    glVertex(np.array(gyro_observed[f]) * gyro_scale * both_scale)
-    glEnd()
+    if draw_rotation:
+        glLineWidth(4)
+        glBegin(GL_LINES)
+        glColor(1, 1, .5, 1)
+        glVertex(0, 0, 0)
+        both_scale = 1 / 10
+        expected_scale = 10 # 10 hz sample rate
+        glVertex(np.array(gyro_expected[f]) * expected_scale * both_scale)
+        glColor(1, .5, 1, 1)
+        glVertex(0, 0, 0)
+        gyro_scale = 250 / 2**15 / 180 * math.pi # 250 degrees per second
+        glVertex(np.array(gyro_observed[f]) * gyro_scale * both_scale)
+        glEnd()
 
 
     glPopMatrix()
