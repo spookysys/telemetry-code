@@ -74,16 +74,14 @@ def gl_display():
               0, 0, 0,
               0, 1, 0)
 
-    mag = np.linalg.norm(gl_view_rotate)
-    if mag > 1:
-        scaler = 3
-        axe = gl_view_rotate / mag
-        glRotate(mag/scaler, axe[1], axe[0], 0)
+    scaler = 3
+    glRotate(gl_view_rotate[1]/scaler, 1, 0, 0)
+    glRotate(gl_view_rotate[0]/scaler, 0, 1, 0)
 
     color = [1, 1, 1]
     glMaterialfv(GL_FRONT, GL_DIFFUSE, color)
     glutWireCube(2)
-    
+
     glPopMatrix()
     glutSwapBuffers()
     return
