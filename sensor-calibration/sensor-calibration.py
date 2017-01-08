@@ -21,10 +21,11 @@ import ellipsoid_fit as ellipsoid_fit_py
 # settings
 sample_hz = 10
 target_hz = 200
+precision_scale = float(1<<8)
 
 
 def load_input():
-    precision_scale = float(1<<8)
+    
 
     if len(sys.argv) != 2:
         raise FileNotFoundError("Please specify input file as only argument")
@@ -122,6 +123,28 @@ accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
 (gyro_expected, gyro_observed) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
+
+# filter for overflows
+gyro_expected2 = []
+gyro_observed2 = []
+for i in range(len(gyro_expected)):
+    observed_limit = 20000000 / precision_scale
+    expected_limit = observed_limit / 25
+    print(np.array(gyro_observed[i]) / gyro_expected[i])
+    if (abs(gyro_observed[i][0]) < observed_limit
+            and abs(gyro_observed[i][1]) < observed_limit
+            and abs(gyro_observed[i][2]) < observed_limit
+            and abs(gyro_expected[i][0]) < expected_limit
+            and abs(gyro_expected[i][1]) < expected_limit
+            and abs(gyro_expected[i][2]) < expected_limit):
+        gyro_expected2.append(gyro_expected[i])
+        gyro_observed2.append(gyro_observed[i])
+
+print("Gyro Overflow Filter before: ", len(gyro_expected), " after: ", len(gyro_expected2))
+
+gyro_expected = gyro_expected2
+gyro_observed = gyro_observed2
+
 yo = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
 print(yo.To_Str())
 gyro_fitted = [yo.Transform(vec) for vec in gyro_observed]
@@ -129,7 +152,7 @@ gyro_fitted = [yo.Transform(vec) for vec in gyro_observed]
 total_error = 0
 for i in range(len(gyro_fitted)):
     total_error += np.linalg.norm(np.array(gyro_fitted[i]) - gyro_expected[i])
-print("gyro total error: ", total_error)
+print("gyro avg error: ", total_error / len(gyro_fitted))
 
 gl_anim = 0
 gl_view_rotate = np.array([0, 0])
