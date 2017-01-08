@@ -67,7 +67,7 @@ def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
             accel_fitted[f+1], mag_fitted[f+1]
         )
         (expected_axis, expected_angle) = axangles.mat2axangle(expected_rot_mat)
-        expected_angle *= sample_hz / target_hz
+        expected_angle *= sample_hz / target_hz * 2**16
         expected.append((expected_axis * expected_angle).tolist())
 
         observed_axis = normalize(normalize(gyro_raw[f]) + normalize(gyro_raw[f+1]))
@@ -113,7 +113,7 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 (gyro_expected, gyro_observed) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
 yo = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
 print(yo.To_Str())
-gyro_fitted = [yo.Transform(vec) for vec in gyro_raw]
+gyro_fitted = [yo.Transform(vec) for vec in gyro_observed]
 
 
 gl_anim = 0
@@ -186,15 +186,20 @@ def gl_display():
 
     # Draw mag and accel strips
     if draw_gyro_cloud:
-        scale = target_hz / 10
-        for i in range(2):
-            alpha = 1
-            glPointSize(3)
-            glColor([[1, 0, 1, alpha], [0, 1, 1, alpha]][i])
-            glBegin(GL_POINTS)
-            for p in [gyro_fitted, gyro_expected][i]:
-                glVertex(np.array(p) * scale)
-            glEnd()
+        glDisable(GL_DEPTH_TEST)
+        scale = target_hz / 10 / 2**16
+        alpha = 0.5
+        glLineWidth(1)
+        glShadeModel(GL_SMOOTH)
+        glBegin(GL_LINES)
+        for i in range(len(gyro_fitted)):
+            glColor([1, 1, 1, alpha])
+            glVertex(np.array(gyro_fitted[i]) * scale)
+            glColor([0, 0, 1, alpha])
+            glVertex(np.array(gyro_expected[i]) * scale)
+        glEnd()
+        glShadeModel(GL_FLAT)
+        glEnable(GL_DEPTH_TEST)
 
     if draw_static_accel_mag:
         glLineWidth(1)
