@@ -53,10 +53,20 @@ def ellipsoid_adjust(vec, center, TR):
 
 
 def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
-    # assert len(gyro_raw) == len(accel_fitted)
-    # assert len(accel_fitted) == len(mag_fitted)
-    # for i in range(len(gyro_raw)-1):
-    return None
+    expected = []
+    observed = []
+    for f in range(len(accel_fitted)-1):
+        expected_rot_mat = rotation_from_two_vectors(
+            accel_fitted[f], mag_fitted[f],
+            accel_fitted[f+1], mag_fitted[f+1]
+        )
+        (expected_axis, expected_angle) = axangles.mat2axangle(expected_rot_mat)
+        expected.append((expected_axis * expected_angle).tolist())
+
+        observed_axis = normalize(normalize(gyro_raw[f]) + normalize(gyro_raw[f+1]))
+        observed_angle = (np.linalg.norm(gyro_raw[f]) + np.linalg.norm(gyro_raw[f+1])) / 2
+        observed.append((observed_axis * observed_angle).tolist())
+    return (expected, observed)
 
 
 def normalize(v):
@@ -93,6 +103,9 @@ mag_fit = ellipsoid_fit(mag_raw)
 accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
+(gyro_expected, gyro_observed) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
+
+
 gl_anim = 0
 gl_view_rotate = np.array([0, 0])
 gl_eye_distance = 5
@@ -119,13 +132,6 @@ def gl_display():
     ]
     axes[2] = normalize(np.cross(axes[0], axes[1]))
 
-    # Calculate expected and observed rotation
-    expected_rot_mat = rotation_from_two_vectors(
-        accel_fitted[f], mag_fitted[f],
-        accel_fitted[f+1], mag_fitted[f+1]
-    )
-#    observed_rot = gyro_raw[f]
-
 
     # Prepare for drawing
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
@@ -146,20 +152,22 @@ def gl_display():
     #glMultMatrixd(rotMat)
 
     # Draw unit cube
+    glLineWidth(1)
     glColor3fv([1, 1, 1])
     glutWireCube(2)
 
     # Draw mag and accel strips
     for i in range(2):
-        alpha = 0.1
-        glPointSize(3)
+        alpha = 1
+        glPointSize(1)
         glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
-        glBegin(GL_LINE_STRIP)
+        glBegin(GL_POINTS)
         for p in [accel_fitted, mag_fitted][i]:
             glVertex(p)
         glEnd()
 
     # Draw axes and mag/accel lines
+    glLineWidth(1)
     glBegin(GL_LINES)
     glColor(1, 0, 0)
     glVertex(0, 0, 0)
@@ -167,39 +175,34 @@ def gl_display():
     glColor(0, 1, 0)
     glVertex(0, 0, 0)
     glVertex(mag_vec)
-    glColor(1, 1, .5)
-    glVertex(0, 0, 0)
-    glVertex(axes[0])
-    glColor(.5, .5, 1)
-    glVertex(0, 0, 0)
-    glVertex(axes[1])
-    #glColor(.5, 1, .5)
-    #glVertex(0, 0, 0)
-    #glVertex(axes[2])
     glEnd()
 
-    expected_rot_aa = axangles.mat2axangle(expected_rot_mat)
-    
+    glLineWidth(4)
+    glBegin(GL_LINES)
+    glColor(1, 0, 0)
+    glVertex(0, 0, 0)
+    glVertex(axes[0])
+    glColor(0, 1, 0)
+    glVertex(0, 0, 0)
+    glVertex(axes[1])
+    glColor(0, 0, 1)
+    glVertex(0, 0, 0)
+    glVertex(axes[2])
+    glEnd()
+
     # Draw gyro line
     glLineWidth(4)
     glBegin(GL_LINES)
-    glColor(1, 1, 1, 1)
-    # glVertex(0, 0, 0)
-    # glVertex(*expected_rot_mat[0].tolist())
-    # glVertex(0, 0, 0)
-    # glVertex(*expected_rot_mat[1].tolist())
-    # glVertex(0, 0, 0)
-    # glVertex(*expected_rot_mat[2].tolist())
+    glColor(1, 1, .5, 1)
     glVertex(0, 0, 0)
     both_scale = 1 / 10
-    expected_scale = 2 * 10 # 10 hz sample rate
-    glVertex(*(expected_rot_aa[0] * expected_rot_aa[1] * expected_scale * both_scale).tolist())
-#    glColor(1, 1, 1)
+    expected_scale = 10 # 10 hz sample rate
+    glVertex(np.array(gyro_expected[f]) * expected_scale * both_scale)
+    glColor(1, .5, 1, 1)
     glVertex(0, 0, 0)
     gyro_scale = 250 / 2**15 / 180 * math.pi # 250 degrees per second
-    glVertex(gyro_vec * gyro_scale * both_scale)
+    glVertex(np.array(gyro_observed[f]) * gyro_scale * both_scale)
     glEnd()
-    glLineWidth(1)
 
 
     glPopMatrix()
@@ -236,7 +239,7 @@ def gl_main():
 
     glClearColor(0., 0., 0., 1.)
 
-    glShadeModel(GL_SMOOTH)
+    glShadeModel(GL_FLAT)
     glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
 
