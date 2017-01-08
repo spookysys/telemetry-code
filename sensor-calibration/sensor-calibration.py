@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import functools
+import time
 import json
 import math
 import sys
@@ -36,10 +37,6 @@ def ellipsoid_fit(data):
 
     center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
 
-    dataC = data - center.T
-    #dataC2 = data2 - center.T
-
-    print(radii)
     a, b, c = radii
     r = 1#(a*b*c)**(1./3.)#preserve volume?
     D = np.array([[r/a, 0., 0.], [0., r/b, 0.], [0., 0., r/c]])
@@ -62,6 +59,31 @@ def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
     return None
 
 
+def normalize(v):
+    norm=np.linalg.norm(v)
+    if norm==0: 
+       return v
+    return v/norm
+
+
+# Calculate current rotation
+def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
+    t0v0 = normalize(t0v0)
+    t0v1 = normalize(t0v1)
+    t0a0 = normalize(t0v0+t0v1)
+    t0a1 = normalize(np.cross(t0v0, t0v1))
+    t0a2 = normalize(np.cross(t0a0, t0a1))
+    t0mat = np.mat([t0a0.tolist(), t0a1.tolist(), t0a2.tolist()])
+
+    t1v0 = normalize(t1v0)
+    t1v1 = normalize(t1v1)
+    t1a0 = normalize(t1v0+t1v1)
+    t1a1 = normalize(np.cross(t1v0, t1v1))
+    t1a2 = normalize(np.cross(t1a0, t1a1))
+    t1mat = np.mat([t1a0.tolist(), t1a1.tolist(), t1a2.tolist()])
+
+    return t0mat.T * t1mat
+
 
 accel_raw, mag_raw, gyro_raw = load_input()
 
@@ -71,39 +93,114 @@ mag_fit = ellipsoid_fit(mag_raw)
 accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
-# gyro_fit = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
-gl_scatter_lists = [accel_fitted, mag_fitted]
-
-
+gl_anim = 0
 gl_view_rotate = np.array([0, 0])
 gl_eye_distance = 5
+gl_start_time = time.time()
+gl_paused = False
 def gl_display():
+    # Get frame and delta for animation
+    if gl_paused:
+        t = gl_start_time
+    else:
+        t = time.time() - gl_start_time
+    t *= 4
+    d = t % 1
+    f = int(t) % (len(accel_raw)-1)
+    accel_vec = (1-d)*np.array(accel_fitted[f]) + d*np.array(accel_fitted[f+1])
+    mag_vec = (1-d)*np.array(mag_fitted[f]) + d*np.array(mag_fitted[f+1])
+    gyro_vec = (1-d)*np.array(gyro_raw[f]) + d*np.array(gyro_raw[f+1])
+
+    # Calculate axes
+    axes = [
+        normalize(normalize(accel_vec) + normalize(mag_vec)),
+        normalize(np.cross(normalize(accel_vec), normalize(mag_vec))),
+        None
+    ]
+    axes[2] = normalize(np.cross(axes[0], axes[1]))
+
+    # Calculate expected and observed rotation
+    expected_rot_mat = rotation_from_two_vectors(
+        accel_fitted[f], mag_fitted[f],
+        accel_fitted[f+1], mag_fitted[f+1]
+    )
+#    observed_rot = gyro_raw[f]
+
+
+    # Prepare for drawing
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE)
     glPushMatrix()
 
     gluLookAt(0, 0, gl_eye_distance,
               0, 0, 0,
               0, 1, 0)
 
-    color_list = [
-        [1, 0, 0],
-        [0, 1, 0]
-    ]
 
     scaler = 3
     glRotate(gl_view_rotate[1]/scaler, 1, 0, 0)
     glRotate(gl_view_rotate[0]/scaler, 0, 1, 0)
 
+    # rotMat = [axes[0][0], axes[1][0], axes[2][0], 0., axes[0][1], axes[1][1], axes[2][1], 0., axes[0][2], axes[1][2], axes[2][2], 0., 0., 0., 0., 1.]
+    #glMultMatrixd(rotMat)
+
+    # Draw unit cube
     glColor3fv([1, 1, 1])
     glutWireCube(2)
 
-    for i in range(len(gl_scatter_lists)):
+    # Draw mag and accel strips
+    for i in range(2):
+        alpha = 0.1
         glPointSize(3)
-        glColor3fv(color_list[i])
-        glBegin(GL_POINTS)
-        for p in gl_scatter_lists[i]:
-            glVertex(p[0], p[1], p[2])
+        glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
+        glBegin(GL_LINE_STRIP)
+        for p in [accel_fitted, mag_fitted][i]:
+            glVertex(p)
         glEnd()
+
+    # Draw axes and mag/accel lines
+    glBegin(GL_LINES)
+    glColor(1, 0, 0)
+    glVertex(0, 0, 0)
+    glVertex(accel_vec)
+    glColor(0, 1, 0)
+    glVertex(0, 0, 0)
+    glVertex(mag_vec)
+    glColor(1, 1, .5)
+    glVertex(0, 0, 0)
+    glVertex(axes[0])
+    glColor(.5, .5, 1)
+    glVertex(0, 0, 0)
+    glVertex(axes[1])
+    #glColor(.5, 1, .5)
+    #glVertex(0, 0, 0)
+    #glVertex(axes[2])
+    glEnd()
+
+    expected_rot_aa = axangles.mat2axangle(expected_rot_mat)
+    
+    # Draw gyro line
+    glLineWidth(4)
+    glBegin(GL_LINES)
+    glColor(1, 1, 1, 1)
+    # glVertex(0, 0, 0)
+    # glVertex(*expected_rot_mat[0].tolist())
+    # glVertex(0, 0, 0)
+    # glVertex(*expected_rot_mat[1].tolist())
+    # glVertex(0, 0, 0)
+    # glVertex(*expected_rot_mat[2].tolist())
+    glVertex(0, 0, 0)
+    both_scale = 1 / 10
+    expected_scale = 2 * 10 # 10 hz sample rate
+    glVertex(*(expected_rot_aa[0] * expected_rot_aa[1] * expected_scale * both_scale).tolist())
+#    glColor(1, 1, 1)
+    glVertex(0, 0, 0)
+    gyro_scale = 250 / 2**15 / 180 * math.pi # 250 degrees per second
+    glVertex(gyro_vec * gyro_scale * both_scale)
+    glEnd()
+    glLineWidth(1)
+
 
     glPopMatrix()
     glutSwapBuffers()
@@ -111,9 +208,16 @@ def gl_display():
 
 gl_mouse_last_coord = [0, 0]
 def gl_mouse_button(button, state, x, y):
+    global gl_paused, gl_start_time
     global gl_mouse_last_coord
-    if button == 2:
-        sys.exit(0)
+    if state == 0 and button == 2:
+        if not gl_paused:
+            gl_paused = True
+            gl_start_time = time.time() - gl_start_time
+        else:
+            gl_paused = False
+            gl_start_time = time.time() - gl_start_time
+
     gl_mouse_last_coord = [x, y]
 
 def gl_mouse_motion(x, y):
@@ -140,8 +244,8 @@ def gl_main():
     glFogfv(GL_FOG_COLOR, [0, 0, 0])
     glFogf(GL_FOG_DENSITY, 1.0)
     glFogf(GL_FOG_START, gl_eye_distance-1) # Fog Start Depth
-    glFogf(GL_FOG_END, gl_eye_distance+1.5) # Fog End Depth
-    # glEnable(GL_FOG)
+    glFogf(GL_FOG_END, gl_eye_distance+1) # Fog End Depth
+    glEnable(GL_FOG)
 
     glutDisplayFunc(gl_display)
     glutMotionFunc(gl_mouse_motion)
