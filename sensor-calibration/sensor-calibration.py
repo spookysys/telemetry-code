@@ -23,10 +23,17 @@ sample_hz = 10
 target_hz = 200
 precision_scale = float(1<<8)
 
+# visualization
+autorotate = True
+draw_accel_mag_cloud = 0.5
+draw_gyro_cloud = False
+draw_axes = True
+draw_anim_accel_mag = True
+draw_gyro_sticks = True # Broken, because of overflow culling
+
+
 
 def load_input():
-    
-
     if len(sys.argv) != 2:
         raise FileNotFoundError("Please specify input file as only argument")
 
@@ -122,37 +129,36 @@ mag_fit = ellipsoid_fit(mag_raw)
 accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
-(gyro_expected, gyro_observed) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
+(gyro_expected_full, gyro_observed_full) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
 
-# filter for overflows
-gyro_expected2 = []
-gyro_observed2 = []
-for i in range(len(gyro_expected)):
+# overflow culling
+gyro_expected_culled = []
+gyro_observed_culled = []
+for i in range(len(gyro_expected_full)):
     observed_limit = 25000000 / precision_scale
     expected_limit = observed_limit / 25
     # print(np.array(gyro_observed[i]) / gyro_expected[i])
-    if (abs(gyro_observed[i][0]) < observed_limit
-            and abs(gyro_observed[i][1]) < observed_limit
-            and abs(gyro_observed[i][2]) < observed_limit
-            and abs(gyro_expected[i][0]) < expected_limit
-            and abs(gyro_expected[i][1]) < expected_limit
-            and abs(gyro_expected[i][2]) < expected_limit):
-        gyro_expected2.append(gyro_expected[i])
-        gyro_observed2.append(gyro_observed[i])
+    if (abs(gyro_observed_full[i][0]) < observed_limit
+            and abs(gyro_observed_full[i][1]) < observed_limit
+            and abs(gyro_observed_full[i][2]) < observed_limit
+            and abs(gyro_expected_full[i][0]) < expected_limit
+            and abs(gyro_expected_full[i][1]) < expected_limit
+            and abs(gyro_expected_full[i][2]) < expected_limit):
+        gyro_expected_culled.append(gyro_expected_full[i])
+        gyro_observed_culled.append(gyro_observed_full[i])
 
-print("Gyro Overflow Filter before: ", len(gyro_expected), " after: ", len(gyro_expected2))
+print("Gyro Overflow Filter before: ", len(gyro_expected_full), " after: ", len(gyro_expected_culled))
 
-gyro_expected = gyro_expected2
-gyro_observed = gyro_observed2
 
-gyro_fit = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
+gyro_fit = affine_fit.Affine_Fit(gyro_observed_culled, gyro_expected_culled)
 print(gyro_fit.To_Str())
-gyro_fitted = [gyro_fit.Transform(vec) for vec in gyro_observed]
+gyro_fitted_culled = [gyro_fit.Transform(vec) for vec in gyro_observed_culled]
+gyro_fitted_full = [gyro_fit.Transform(vec) for vec in gyro_observed_full]
 
 total_error = 0
-for i in range(len(gyro_fitted)):
-    total_error += np.linalg.norm(np.array(gyro_fitted[i]) - gyro_expected[i])
-print("gyro avg error: ", total_error / len(gyro_fitted))
+for i in range(len(gyro_fitted_culled)):
+    total_error += np.linalg.norm(np.array(gyro_fitted_culled[i]) - gyro_expected_culled[i])
+print("gyro avg error: ", total_error / len(gyro_fitted_culled))
 
 gl_anim = 0
 gl_view_rotate = np.array([0, 0])
@@ -196,25 +202,19 @@ def gl_display():
     glRotate(gl_view_rotate[1]/scaler, 1, 0, 0)
     glRotate(gl_view_rotate[0]/scaler, 0, 1, 0)
 
-    # rotMat = [axes[0][0], axes[1][0], axes[2][0], 0., axes[0][1], axes[1][1], axes[2][1], 0., axes[0][2], axes[1][2], axes[2][2], 0., 0., 0., 0., 1.]
-    #glMultMatrixd(rotMat)
+    if autorotate:
+        rotMat = [axes[0][0], axes[1][0], axes[2][0], 0., axes[0][1], axes[1][1], axes[2][1], 0., axes[0][2], axes[1][2], axes[2][2], 0., 0., 0., 0., 1.]
+        glMultMatrixd(rotMat)
 
     # Draw unit cube
     glLineWidth(1)
     glColor3fv([1, 1, 1])
     glutWireCube(2)
 
-    draw_accel_mag_cloud = False
-    draw_gyro_cloud = True
-    draw_axes = False
-    draw_anim_accel_mag = False
-    draw_gyro_sticks = False # Broken, because of overflow culling
-
-
     # Draw mag and accel strips
-    if draw_accel_mag_cloud:
+    if draw_accel_mag_cloud > 0:
         for i in range(2):
-            alpha = 1
+            alpha = draw_accel_mag_cloud
             glPointSize(3)
             glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
             glBegin(GL_POINTS)
@@ -230,21 +230,21 @@ def gl_display():
         glShadeModel(GL_SMOOTH)
         glLineWidth(1)
         glBegin(GL_LINES)
-        for i in range(len(gyro_fitted)):
+        for i in range(len(gyro_fitted_culled)):
             glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_expected[i]) * scale)
+            glVertex(np.array(gyro_expected_culled[i]) * scale)
             glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted[i]) * scale)
+            glVertex(np.array(gyro_fitted_culled[i]) * scale)
         glEnd()
 
         glShadeModel(GL_FLAT)
         glPointSize(3)
         glBegin(GL_POINTS)
-        for i in range(len(gyro_fitted)):
+        for i in range(len(gyro_fitted_culled)):
             glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_expected[i]) * scale)
+            glVertex(np.array(gyro_expected_culled[i]) * scale)
             glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted[i]) * scale)
+            glVertex(np.array(gyro_fitted_culled[i]) * scale)
         glEnd()
 
 
@@ -274,17 +274,15 @@ def gl_display():
         glEnd()
 
     if draw_gyro_sticks:
+        scale = target_hz / 10 / 2**16
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
         glVertex(0, 0, 0)
-        both_scale = 1 / 100
-        expected_scale = 1 # 10 hz sample rate
-        glVertex(np.array(gyro_expected[f]) * expected_scale * both_scale)
+        glVertex(np.array(gyro_expected_full[f]) * scale)
         glColor(1, .5, 1, 1)
         glVertex(0, 0, 0)
-        gyro_scale = 250 / 2**15 / 180 * math.pi # 250 degrees per second
-        glVertex(np.array(gyro_observed[f]) * gyro_scale * both_scale)
+        glVertex(np.array(gyro_fitted_full[f]) * scale)        
         glEnd()
 
 
