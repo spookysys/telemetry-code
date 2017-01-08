@@ -16,6 +16,7 @@ namespace
         int imu_datas = 0;
         std::array<int32_t, 3> accel_data{};
         std::array<int32_t, 3> gyro_data{};
+        int64_t gyro_mag;
         int mag_datas = 0;
         std::array<int32_t, 3> mag_data{};
         int alt_datas = 0;
@@ -34,6 +35,12 @@ namespace
             akku.gyro_data[0] += data.gyro_data[0];
             akku.gyro_data[1] += data.gyro_data[1];
             akku.gyro_data[2] += data.gyro_data[2];
+            // calculate gyro magnitude (spending all my cycles)
+            int64_t mag_squared = int64_t(data.gyro_data[0])*data.gyro_data[0] 
+                                + int64_t(data.gyro_data[1])*data.gyro_data[1] 
+                                + int64_t(data.gyro_data[2])*data.gyro_data[2];
+            int64_t mag = sqrt(mag_squared);
+            akku.gyro_mag += mag;
         }
         if (data.mag_valid) {
             akku.mag_datas++;
@@ -78,18 +85,18 @@ void loop()
     led_on = !led_on;
     digitalWrite(pins::LED, led_on);
     
-    delay(100);
+    delay(200);
 
     noInterrupts();
     {
         static unsigned long tick = 0;
 
-        float imu_scaler = 1.f / akku.imu_datas;
-        float mag_scaler = 1.f / akku.mag_datas;
+        float imu_scaler = 1.0 / akku.imu_datas;
+        float mag_scaler = 1.0 / akku.mag_datas;
 
         Serial.println("{");
         Serial.println(String("  \"tick\":") + tick + ",");
-        Serial.println(String("  \"gyro\":[") + akku.gyro_data[0]*imu_scaler + "," + akku.gyro_data[1]*imu_scaler + "," + akku.gyro_data[2]*imu_scaler + "],");
+        Serial.println(String("  \"gyro\":[") + akku.gyro_data[0]*imu_scaler + "," + akku.gyro_data[1]*imu_scaler + "," + akku.gyro_data[2]*imu_scaler + "], \"gyro_mag\":" + akku.gyro_mag*imu_scaler + ",");
         Serial.println(String("  \"accel\":[") + akku.accel_data[0]*imu_scaler + "," + akku.accel_data[1]*imu_scaler + "," + akku.accel_data[2]*imu_scaler + "],");
         Serial.println(String("  \"mag\":[") + akku.mag_data[0]*mag_scaler + "," + akku.mag_data[1]*mag_scaler + "," + akku.mag_data[2]*mag_scaler + "]" );
         Serial.println("},");

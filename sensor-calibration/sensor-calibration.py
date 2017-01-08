@@ -30,10 +30,19 @@ def load_input():
     with open(sys.argv[1]) as jsonfile:
         input_json = json.load(jsonfile)
 
-    accel_raw = [item['accel'] for item in input_json]
-    mag_raw = [item['mag'] for item in input_json]
-    gyro_raw = [item['gyro'] for item in input_json]
-
+    accel_raw = []
+    mag_raw = []
+    gyro_raw = []
+    sum_scale_error = 0
+    for item in input_json:
+        accel_raw.append(item['accel'])
+        mag_raw.append(item['mag'])
+        gyro_axis = item['gyro']
+        gyro_mag = item['gyro_mag']
+        sum_scale_error += float(gyro_mag) / np.linalg.norm(gyro_axis)
+        gyro_raw.append(normalize(gyro_axis) * gyro_mag)
+    print("scale_error (fixed): ", sum_scale_error / len(input_json))
+    
     return accel_raw, mag_raw, gyro_raw
 
 
@@ -77,10 +86,10 @@ def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
 
 
 def normalize(v):
-    norm=np.linalg.norm(v)
-    if norm==0: 
-       return v
-    return v/norm
+    norm = np.linalg.norm(v)
+    if norm == 0:
+        return v
+    return v / norm
 
 
 # Calculate current rotation
@@ -115,6 +124,10 @@ yo = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
 print(yo.To_Str())
 gyro_fitted = [yo.Transform(vec) for vec in gyro_observed]
 
+total_error = 0
+for i in range(len(gyro_fitted)):
+    total_error += np.linalg.norm(np.array(gyro_fitted[i]) - gyro_expected[i])
+print("gyro total error: ", total_error)
 
 gl_anim = 0
 gl_view_rotate = np.array([0, 0])
@@ -184,22 +197,31 @@ def gl_display():
                 glVertex(p)
             glEnd()
 
-    # Draw mag and accel strips
+    # Draw gyro clouds
     if draw_gyro_cloud:
-        glDisable(GL_DEPTH_TEST)
         scale = target_hz / 10 / 2**16
         alpha = 0.5
-        glLineWidth(1)
+
         glShadeModel(GL_SMOOTH)
+        glLineWidth(1)
         glBegin(GL_LINES)
         for i in range(len(gyro_fitted)):
+            glColor([1, 0, 1, alpha])
+            glVertex(np.array(gyro_expected[i]) * scale)
             glColor([1, 1, 1, alpha])
             glVertex(np.array(gyro_fitted[i]) * scale)
-            glColor([0, 0, 1, alpha])
-            glVertex(np.array(gyro_expected[i]) * scale)
         glEnd()
+
         glShadeModel(GL_FLAT)
-        glEnable(GL_DEPTH_TEST)
+        glPointSize(3)
+        glBegin(GL_POINTS)
+        for i in range(len(gyro_fitted)):
+            glColor([1, 0, 1, alpha])
+            glVertex(np.array(gyro_expected[i]) * scale)
+            glColor([1, 1, 1, alpha])
+            glVertex(np.array(gyro_fitted[i]) * scale)
+        glEnd()
+
 
     if draw_static_accel_mag:
         glLineWidth(1)
@@ -277,7 +299,7 @@ def gl_main():
 
     glShadeModel(GL_FLAT)
     glEnable(GL_CULL_FACE)
-    glEnable(GL_DEPTH_TEST)
+    glDisable(GL_DEPTH_TEST)
 
     glFogi(GL_FOG_MODE, GL_LINEAR)
     glFogfv(GL_FOG_COLOR, [0, 0, 0])
