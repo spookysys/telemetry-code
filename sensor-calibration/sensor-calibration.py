@@ -128,9 +128,9 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 gyro_expected2 = []
 gyro_observed2 = []
 for i in range(len(gyro_expected)):
-    observed_limit = 20000000 / precision_scale
+    observed_limit = 25000000 / precision_scale
     expected_limit = observed_limit / 25
-    print(np.array(gyro_observed[i]) / gyro_expected[i])
+    # print(np.array(gyro_observed[i]) / gyro_expected[i])
     if (abs(gyro_observed[i][0]) < observed_limit
             and abs(gyro_observed[i][1]) < observed_limit
             and abs(gyro_observed[i][2]) < observed_limit
@@ -145,9 +145,9 @@ print("Gyro Overflow Filter before: ", len(gyro_expected), " after: ", len(gyro_
 gyro_expected = gyro_expected2
 gyro_observed = gyro_observed2
 
-yo = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
-print(yo.To_Str())
-gyro_fitted = [yo.Transform(vec) for vec in gyro_observed]
+gyro_fit = affine_fit.Affine_Fit(gyro_observed, gyro_expected)
+print(gyro_fit.To_Str())
+gyro_fitted = [gyro_fit.Transform(vec) for vec in gyro_observed]
 
 total_error = 0
 for i in range(len(gyro_fitted)):
@@ -207,8 +207,8 @@ def gl_display():
     draw_accel_mag_cloud = False
     draw_gyro_cloud = True
     draw_axes = False
-    draw_static_accel_mag = False
-    draw_rotation = False
+    draw_anim_accel_mag = False
+    draw_gyro_sticks = False # Broken, because of overflow culling
 
 
     # Draw mag and accel strips
@@ -248,7 +248,7 @@ def gl_display():
         glEnd()
 
 
-    if draw_static_accel_mag:
+    if draw_anim_accel_mag:
         glLineWidth(1)
         glBegin(GL_LINES)
         glColor(1, 0, 0)
@@ -262,10 +262,10 @@ def gl_display():
     if draw_axes:
         glLineWidth(4)
         glBegin(GL_LINES)
-        glColor(1, 0, 0)
+        glColor(1, 1, 0)
         glVertex(0, 0, 0)
         glVertex(axes[0])
-        glColor(0, 1, 0)
+        glColor(1, 0, 0)
         glVertex(0, 0, 0)
         glVertex(axes[1])
         glColor(0, 0, 1)
@@ -273,13 +273,13 @@ def gl_display():
         glVertex(axes[2])
         glEnd()
 
-    if draw_rotation:
+    if draw_gyro_sticks:
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
         glVertex(0, 0, 0)
-        both_scale = 1 / 10
-        expected_scale = 10 # 10 hz sample rate
+        both_scale = 1 / 100
+        expected_scale = 1 # 10 hz sample rate
         glVertex(np.array(gyro_expected[f]) * expected_scale * both_scale)
         glColor(1, .5, 1, 1)
         glVertex(0, 0, 0)
