@@ -69,7 +69,7 @@ void setup()
     // Init serial
     SerialUSB.begin(9600);
     int last_i=0;
-    for (int i=0; i<200 && !SerialUSB; i++) {
+    for (int i=0; !SerialUSB; i++) {
         delay(100);
         last_i = i*100;
     }
