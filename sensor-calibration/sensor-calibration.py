@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
 
 import functools
-import sys
-import math
 import json
+import math
+import sys
+import functools
 from pprint import pprint
+
 import numpy as np
-import cal_lib
-from transforms3d import axangles
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
 from OpenGL.GL import *
+from OpenGL.GLU import *
+from OpenGL.GLUT import *
+from transforms3d import axangles
+
+import ellipsoid_fit as ellipsoid_fit_py
+
 
 def load_input():
     if len(sys.argv) != 2:
@@ -27,60 +31,79 @@ def load_input():
 
 
 
-def adjust(vec, offset, scale):
-    vec = np.array(vec)
-    offset = np.array(offset)
-    scale = np.array(scale)
-    return ((vec - offset) / scale).tolist()
+def ellipsoid_fit(data):
+    data2 = ellipsoid_fit_py.data_regularize(np.array(data), divs=8)
+
+    center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
+
+    dataC = data - center.T
+    #dataC2 = data2 - center.T
+
+    print(radii)
+    a, b, c = radii
+    r = 1#(a*b*c)**(1./3.)#preserve volume?
+    D = np.array([[r/a, 0., 0.], [0., r/b, 0.], [0., 0., r/c]])
+    #http://www.cs.brandeis.edu/~cs155/Lecture_07_6.pdf
+    #affine transformation from ellipsoid to sphere (translation excluded)
+    TR = evecs.dot(D).dot(evecs.T)
+
+    return (center.flatten(), TR)
 
 
-
-def analyze_mag_accel(vecs):
-    vec_x = [item[0] for item in vecs]
-    vec_y = [item[1] for item in vecs]
-    vec_z = [item[2] for item in vecs]
-    offset, scale = cal_lib.calibrate(np.array(vec_x), np.array(vec_y), np.array(vec_z))
-    return {'offset': offset, 'scale': scale}
-
+def ellipsoid_adjust(vec, center, TR):
+    return TR.dot((vec-center).T).T
 
 
 
 def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
-    assert len(gyro_raw) == len(accel_fitted)
-    assert len(accel_fitted) == len(mag_fitted)
+    # assert len(gyro_raw) == len(accel_fitted)
+    # assert len(accel_fitted) == len(mag_fitted)
     # for i in range(len(gyro_raw)-1):
     return None
 
+
+
 accel_raw, mag_raw, gyro_raw = load_input()
 
-accel_fit = analyze_mag_accel(accel_raw)
-mag_fit = analyze_mag_accel(mag_raw)
+accel_fit = ellipsoid_fit(accel_raw)
+mag_fit = ellipsoid_fit(mag_raw)
 
-accel_fitted = [adjust(x, accel_fit['offset'], accel_fit['scale']) for x in accel_raw]
-mag_fitted = [adjust(x, mag_fit['offset'], mag_fit['scale']) for x in mag_raw]
+accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
+mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
-gyro_fit = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
-
-
-
+# gyro_fit = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
+gl_scatter_lists = [accel_fitted, mag_fitted]
 
 
 gl_view_rotate = np.array([0, 0])
+gl_eye_distance = 5
 def gl_display():
     glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT)
     glPushMatrix()
 
-    gluLookAt(0, 0, 5,
+    gluLookAt(0, 0, gl_eye_distance,
               0, 0, 0,
               0, 1, 0)
+
+    color_list = [
+        [1, 0, 0],
+        [0, 1, 0]
+    ]
 
     scaler = 3
     glRotate(gl_view_rotate[1]/scaler, 1, 0, 0)
     glRotate(gl_view_rotate[0]/scaler, 0, 1, 0)
 
-    color = [1, 1, 1]
-    glMaterialfv(GL_FRONT, GL_DIFFUSE, color)
+    glColor3fv([1, 1, 1])
     glutWireCube(2)
+
+    for i in range(len(gl_scatter_lists)):
+        glPointSize(3)
+        glColor3fv(color_list[i])
+        glBegin(GL_POINTS)
+        for p in gl_scatter_lists[i]:
+            glVertex(p[0], p[1], p[2])
+        glEnd()
 
     glPopMatrix()
     glutSwapBuffers()
@@ -104,7 +127,7 @@ def gl_idle():
 def gl_main():
     glutInit(sys.argv)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)
-    glutInitWindowSize(400, 400)
+    glutInitWindowSize(800, 800)
     glutCreateWindow(b"Visualize")
 
     glClearColor(0., 0., 0., 1.)
@@ -112,20 +135,21 @@ def gl_main():
     glShadeModel(GL_SMOOTH)
     glEnable(GL_CULL_FACE)
     glEnable(GL_DEPTH_TEST)
-    glEnable(GL_LIGHTING)
-    lightZeroPosition = [10., 4., 10., 1.]
-    lightZeroColor = [0.8, 1.0, 0.8, 1.0] #green tinged
-    glLightfv(GL_LIGHT0, GL_POSITION, lightZeroPosition)
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, lightZeroColor)
-    glLightf(GL_LIGHT0, GL_CONSTANT_ATTENUATION, 0.1)
-    glLightf(GL_LIGHT0, GL_LINEAR_ATTENUATION, 0.05)
-    glEnable(GL_LIGHT0)
+
+    glFogi(GL_FOG_MODE, GL_LINEAR)
+    glFogfv(GL_FOG_COLOR, [0, 0, 0])
+    glFogf(GL_FOG_DENSITY, 1.0)
+    glFogf(GL_FOG_START, gl_eye_distance-1) # Fog Start Depth
+    glFogf(GL_FOG_END, gl_eye_distance+1.5) # Fog End Depth
+    # glEnable(GL_FOG)
+
     glutDisplayFunc(gl_display)
     glutMotionFunc(gl_mouse_motion)
     glutMouseFunc(gl_mouse_button)
     glutIdleFunc(gl_idle)
     glMatrixMode(GL_PROJECTION)
-    gluPerspective(40., 1., 1., 40.)
+    #gluPerspective(40., 1., 1., 40.)
+    glOrtho(-2, 2, -2, 2, 1, gl_eye_distance * 2)
     glMatrixMode(GL_MODELVIEW)
     glutMainLoop()
     return
