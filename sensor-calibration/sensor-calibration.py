@@ -24,6 +24,8 @@ target_hz = 200
 
 
 def load_input():
+    precision_scale = float(1<<8)
+
     if len(sys.argv) != 2:
         raise FileNotFoundError("Please specify input file as only argument")
 
@@ -35,14 +37,14 @@ def load_input():
     gyro_raw = []
     sum_scale_error = 0
     for item in input_json:
-        accel_raw.append(item['accel'])
-        mag_raw.append(item['mag'])
-        gyro_axis = item['gyro']
-        gyro_mag = item['gyro_mag']
+        accel_raw.append(np.array(item['accel']) / precision_scale)
+        mag_raw.append(np.array(item['mag']) / precision_scale)
+        gyro_axis = np.array(item['gyro']) / precision_scale
+        gyro_mag = item['gyro_mag'] / precision_scale
         sum_scale_error += float(gyro_mag) / np.linalg.norm(gyro_axis)
         gyro_raw.append(normalize(gyro_axis) * gyro_mag)
     print("scale_error (fixed): ", sum_scale_error / len(input_json))
-    
+
     return accel_raw, mag_raw, gyro_raw
 
 

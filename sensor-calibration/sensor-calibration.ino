@@ -91,8 +91,9 @@ void loop()
     {
         static unsigned long tick = 0;
 
-        float imu_scaler = 1.0 / akku.imu_datas;
-        float mag_scaler = 1.0 / akku.mag_datas;
+        static const float precision_scale = (1<<8);
+        float imu_scaler = precision_scale / akku.imu_datas;
+        float mag_scaler = precision_scale / akku.mag_datas;
 
         Serial.println("{");
         Serial.println(String("  \"tick\":") + tick + ",");
