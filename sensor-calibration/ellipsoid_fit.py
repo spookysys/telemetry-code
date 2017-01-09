@@ -129,20 +129,17 @@ def ellipsoid_fit(X):
     D = np.array([x*x,
                  y*y,
                  z*z,
-                 2 * x*y,
-                 2 * x*z,
-                 2 * y*z,
                  2 * x,
                  2 * y,
                  2 * z])
     DT = D.conj().T
     v = np.linalg.solve( D.dot(DT), D.dot( np.ones( np.size(x) ) ) )
-    A = np.array(  [[v[0], v[3], v[4], v[6]],
-                    [v[3], v[1], v[5], v[7]],
-                    [v[4], v[5], v[2], v[8]],
-                    [v[6], v[7], v[8], -1]])
+    A = np.array([[v[0],    0,    0, v[3]],
+                  [   0, v[1],    0, v[4]],
+                  [   0,    0, v[2], v[5]],
+                  [v[3], v[4], v[5], -1]])
 
-    center = np.linalg.solve(- A[:3,:3], [[v[6]],[v[7]],[v[8]]])
+    center = np.linalg.solve(- A[:3,:3], [[v[3]],[v[4]],[v[5]]])
     T = np.eye(4)
     T[3,:3] = center.T
     R = T.dot(A).dot(T.conj().T)

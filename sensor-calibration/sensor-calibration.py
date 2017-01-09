@@ -43,15 +43,12 @@ def load_input():
     accel_raw = []
     mag_raw = []
     gyro_raw = []
-    sum_scale_error = 0
     for item in input_json:
         accel_raw.append(np.array(item['accel']) / precision_scale)
         mag_raw.append(np.array(item['mag']) / precision_scale)
         gyro_axis = np.array(item['gyro']) / precision_scale
         gyro_mag = item['gyro_mag'] / precision_scale
-        sum_scale_error += float(gyro_mag) / np.linalg.norm(gyro_axis)
         gyro_raw.append(normalize(gyro_axis) * gyro_mag)
-    print("scale_error (fixed): ", sum_scale_error / len(input_json))
 
     return accel_raw, mag_raw, gyro_raw
 
@@ -131,6 +128,18 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
 (gyro_expected_full, gyro_observed_full) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
 
+output = {
+    'accel': {
+        'offset': accel_fit[0].tolist(),
+        'scale': (2**32 * np.array([accel_fit[1][0][0], accel_fit[1][1][1], accel_fit[1][2][2]])).tolist()
+    },
+    'mag': {
+        'offset': mag_fit[0].tolist(),
+        'scale': (2**32 * np.array([mag_fit[1][0][0], mag_fit[1][1][1], mag_fit[1][2][2]])).tolist()
+    }
+}
+print(output)
+
 # overflow culling
 gyro_expected_culled = []
 gyro_observed_culled = []
@@ -151,7 +160,6 @@ print("Gyro Overflow Filter before: ", len(gyro_expected_full), " after: ", len(
 
 
 gyro_fit = affine_fit.Affine_Fit(gyro_observed_culled, gyro_expected_culled)
-print(gyro_fit.To_Str())
 gyro_fitted_culled = [gyro_fit.Transform(vec) for vec in gyro_observed_culled]
 gyro_fitted_full = [gyro_fit.Transform(vec) for vec in gyro_observed_full]
 
@@ -216,7 +224,7 @@ def gl_display():
         for i in range(2):
             alpha = draw_accel_mag_cloud
             glPointSize(3)
-            glColor([[1, 0, 0, alpha], [0, 1, 0, alpha]][i])
+            glColor([[1, 0, 1, alpha], [0, 1, 0, alpha]][i])
             glBegin(GL_POINTS)
             for p in [accel_fitted, mag_fitted][i]:
                 glVertex(p)
