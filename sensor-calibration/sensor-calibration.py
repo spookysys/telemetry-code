@@ -21,11 +21,12 @@ import ellipsoid_fit as ellipsoid_fit_py
 # settings
 sample_hz = 10
 target_hz = 200
-precision_scale = float(1<<8)
+point_precision = 2**8 # precision of input points, and output offsets
+scale_precision = 2**32 # precision of output scale factors
 
 # visualization
 autorotate = True
-draw_accel_mag_cloud = 0.5
+draw_accel_mag_cloud = 0.25
 draw_gyro_cloud = False
 draw_axes = True
 draw_anim_accel_mag = True
@@ -44,10 +45,10 @@ def load_input():
     mag_raw = []
     gyro_raw = []
     for item in input_json:
-        accel_raw.append(np.array(item['accel']) / precision_scale)
-        mag_raw.append(np.array(item['mag']) / precision_scale)
-        gyro_axis = np.array(item['gyro']) / precision_scale
-        gyro_mag = item['gyro_mag'] / precision_scale
+        accel_raw.append(np.array(item['accel']) / point_precision)
+        mag_raw.append(np.array(item['mag']) / point_precision)
+        gyro_axis = np.array(item['gyro']) / point_precision
+        gyro_mag = item['gyro_mag'] / point_precision
         gyro_raw.append(normalize(gyro_axis) * gyro_mag)
 
     return accel_raw, mag_raw, gyro_raw
@@ -128,23 +129,13 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
 (gyro_expected_full, gyro_observed_full) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
 
-output = {
-    'accel': {
-        'offset': accel_fit[0].tolist(),
-        'scale': (2**32 * np.array([accel_fit[1][0][0], accel_fit[1][1][1], accel_fit[1][2][2]])).tolist()
-    },
-    'mag': {
-        'offset': mag_fit[0].tolist(),
-        'scale': (2**32 * np.array([mag_fit[1][0][0], mag_fit[1][1][1], mag_fit[1][2][2]])).tolist()
-    }
-}
-print(output)
+
 
 # overflow culling
 gyro_expected_culled = []
 gyro_observed_culled = []
 for i in range(len(gyro_expected_full)):
-    observed_limit = 25000000 / precision_scale
+    observed_limit = 25000000 / point_precision
     expected_limit = observed_limit / 25
     # print(np.array(gyro_observed[i]) / gyro_expected[i])
     if (abs(gyro_observed_full[i][0]) < observed_limit
@@ -167,6 +158,31 @@ total_error = 0
 for i in range(len(gyro_fitted_culled)):
     total_error += np.linalg.norm(np.array(gyro_fitted_culled[i]) - gyro_expected_culled[i])
 print("gyro avg error: ", total_error / len(gyro_fitted_culled))
+
+
+############################################
+## PRINT OUTPUT
+############################################
+
+output = {
+    'accel': {
+        'offset': [int(x * point_precision) for x in accel_fit[0]],
+        'scale': [int(x * scale_precision) for x in accel_fit[1].diagonal()]
+    },
+    'mag': {
+        'offset': [int(x * point_precision) for x in mag_fit[0]],
+        'scale': [int(x * scale_precision) for x in mag_fit[1].diagonal()]
+    }
+}
+print(output)
+
+
+
+
+############################################
+## EVERYTHING BELOW IS VISUALIZATION CODE
+############################################
+
 
 gl_anim = 0
 gl_view_rotate = np.array([0, 0])
@@ -224,6 +240,7 @@ def gl_display():
         for i in range(2):
             alpha = draw_accel_mag_cloud
             glPointSize(3)
+            glLineWidth(1)
             glColor([[1, 0, 1, alpha], [0, 1, 0, alpha]][i])
             glBegin(GL_POINTS)
             for p in [accel_fitted, mag_fitted][i]:
@@ -259,7 +276,7 @@ def gl_display():
     if draw_anim_accel_mag:
         glLineWidth(1)
         glBegin(GL_LINES)
-        glColor(1, 0, 0)
+        glColor(1, 0, 1)
         glVertex(0, 0, 0)
         glVertex(accel_vec)
         glColor(0, 1, 0)
@@ -290,7 +307,7 @@ def gl_display():
         glVertex(np.array(gyro_expected_full[f]) * scale)
         glColor(1, .5, 1, 1)
         glVertex(0, 0, 0)
-        glVertex(np.array(gyro_fitted_full[f]) * scale)        
+        glVertex(np.array(gyro_fitted_full[f]) * scale)
         glEnd()
 
 
@@ -344,8 +361,8 @@ def gl_main():
     glutMouseFunc(gl_mouse_button)
     glutIdleFunc(gl_idle)
     glMatrixMode(GL_PROJECTION)
-    #gluPerspective(40., 1., 1., 40.)
-    glOrtho(-2, 2, -2, 2, 1, gl_eye_distance * 2)
+    gluPerspective(40., 1., 1., 40.)
+    #glOrtho(-2, 2, -2, 2, 1, gl_eye_distance * 2)
     glMatrixMode(GL_MODELVIEW)
     glutMainLoop()
     return
