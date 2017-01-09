@@ -19,39 +19,37 @@ namespace
         int64_t gyro_mag;
         int mag_datas = 0;
         std::array<int32_t, 3> mag_data{};
-        int alt_datas = 0;
-        uint32_t alt_p{};
-        int32_t alt_t{};
     } akku;
 
 
     void sensorUpdate(const sensors::SensorData &data)
     {
+        // accumulate inertial data
         if (data.imu_valid) {
             akku.imu_datas++;
+            // accumulate accelerometer vector
             akku.accel_data[0] += data.accel_data[0];
             akku.accel_data[1] += data.accel_data[1];
             akku.accel_data[2] += data.accel_data[2];
+            // accumulate gyro axis
             akku.gyro_data[0] += data.gyro_data[0];
             akku.gyro_data[1] += data.gyro_data[1];
             akku.gyro_data[2] += data.gyro_data[2];
-            // calculate gyro magnitude (spending all my cycles)
+            // accumulate gyro magnitude
             int64_t mag_squared = int64_t(data.gyro_data[0])*data.gyro_data[0] 
                                 + int64_t(data.gyro_data[1])*data.gyro_data[1] 
                                 + int64_t(data.gyro_data[2])*data.gyro_data[2];
             int64_t mag = sqrt(mag_squared);
             akku.gyro_mag += mag;
+            // gyro axis and magnitude are accumulated separately to overcome shortening of vector when averaging
+            // this is not done for accelerometer and magnetometer, since for them I'm mostly interested in direction
         }
+        // accumulate magnetometer vector
         if (data.mag_valid) {
             akku.mag_datas++;
             akku.mag_data[0] += data.mag_data[0];
             akku.mag_data[1] += data.mag_data[1];
             akku.mag_data[2] += data.mag_data[2];
-        }
-        if (data.alt_valid) {
-            akku.alt_datas++;
-            akku.alt_p += data.alt_p;
-            akku.alt_t += data.alt_t;
         }
     }
 }
@@ -91,9 +89,9 @@ void loop()
     {
         static unsigned long tick = 0;
 
-        static const float precision_scale = (1<<8);
-        float imu_scaler = precision_scale / akku.imu_datas;
-        float mag_scaler = precision_scale / akku.mag_datas;
+        static const float point_precision = (1<<8);
+        float imu_scaler = point_precision / akku.imu_datas;
+        float mag_scaler = point_precision / akku.mag_datas;
 
         Serial.println("{");
         Serial.println(String("  \"tick\":") + tick + ",");

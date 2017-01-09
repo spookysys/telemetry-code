@@ -65,10 +65,15 @@ def ellipsoid_fit(data):
     # Calculate offset and scale and return
     D = np.diag(1 / radii)
     TR = evecs.dot(D).dot(evecs.T)
-    return (offset.flatten(), TR.diagonal())
 
+    # Calculate unit (size of one unit after fitting)
+    unit = (radii[0]*radii[1]*radii[2]) ** (1./3.)
 
-def ellipsoid_adjust(vec, offset, scale):
+    # Return the fit
+    return (offset.flatten(), TR.diagonal(), unit)
+
+# return fitted value
+def ellipsoid_adjust(vec, offset, scale, unit):
     return (vec - offset) * scale
 
 
@@ -166,11 +171,13 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 output = {
     'accel': {
         'offset': [int(x * point_precision) for x in accel_fit[0]],
-        'scale': [int(x * scale_precision) for x in accel_fit[1]]
+        'scale': [int(x * scale_precision) for x in accel_fit[1]],
+        'unit': int(accel_fit[2] * point_precision)
     },
     'mag': {
         'offset': [int(x * point_precision) for x in mag_fit[0]],
-        'scale': [int(x * scale_precision) for x in mag_fit[1]]
+        'scale': [int(x * scale_precision) for x in mag_fit[1]],
+        'unit': int(mag_fit[2] * point_precision)
     }
 }
 
