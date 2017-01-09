@@ -65,7 +65,7 @@ def pointcloud_fit(from_pts, to_pts):
 
     return {
         'center': center,
-        'rescale': scale / normalize,
+        'rescale': (scale / normalize).tolist(),
         'normalize': normalize
     }
 
@@ -96,8 +96,8 @@ def accel_mag_fit(data):
     scale = TR.diagonal()
     normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
     fit = {
-        'center': center.flatten(),
-        'rescale': scale / normalize,
+        'center': center.flatten().tolist(),
+        'rescale': (scale / normalize).tolist(),
         'normalize': normalize
     }
 
@@ -195,7 +195,7 @@ accel_raw, mag_raw, gyro_raw = load_input()
 (gyro_fit, gyro_fitted, gyro_calculated, gyro_used) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
 
 ############################################
-## PRINT OUTPUT
+## SERIALIZE AND PRINT OUTPUT
 ############################################
 
 output = {
@@ -203,11 +203,24 @@ output = {
     'mag': mag_fit,
     'gyro': gyro_fit
 }
+print()
 
+print("Calibration Result:")
 print(output)
+print()
 
+print("Serializing...")
+with open('calib.msg', 'wb') as f:
+    packed_data = msgpack.packb(output)
+    f.write(packed_data)
+print("Deserialized Result:")
+with open('calib.msg', 'rb') as f:
+    packed_data = f.read()
+    unpacked_data = msgpack.unpackb(packed_data)
+    print(unpacked_data)
+print()
 
-
+print("Running visualization")
 
 ############################################
 ## EVERYTHING BELOW IS VISUALIZATION CODE

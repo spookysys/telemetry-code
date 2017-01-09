@@ -1,4 +1,4 @@
-# Credit: aleksandrbazhin, modified by me to fit axis-aligned rather than arbitrarily oriented ellipsoid
+# Credit: aleksandrbazhin, modified by me to fit axis-aligned rather than arbitrarily oriented ellipsoid (I don't know what I did but it seems to work...)
 # URL (original): https://raw.githubusercontent.com/aleksandrbazhin/elipsoid_fit_python/master/ellipsoid_fit.py
 
 import numpy as np
