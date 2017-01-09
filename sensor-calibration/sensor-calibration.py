@@ -56,22 +56,20 @@ def load_input():
 
 
 def ellipsoid_fit(data):
+    # Regularize
     data2 = ellipsoid_fit_py.data_regularize(np.array(data), divs=8)
 
-    center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
+    # Calculate fit
+    offset, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
 
-    a, b, c = radii
-    r = 1#(a*b*c)**(1./3.)#preserve volume?
-    D = np.array([[r/a, 0., 0.], [0., r/b, 0.], [0., 0., r/c]])
-    #http://www.cs.brandeis.edu/~cs155/Lecture_07_6.pdf
-    #affine transformation from ellipsoid to sphere (translation excluded)
+    # Calculate offset and scale and return
+    D = np.diag(1 / radii)
     TR = evecs.dot(D).dot(evecs.T)
+    return (offset.flatten(), TR.diagonal())
 
-    return (center.flatten(), TR)
 
-
-def ellipsoid_adjust(vec, center, TR):
-    return TR.dot((vec-center).T).T
+def ellipsoid_adjust(vec, offset, scale):
+    return (vec - offset) * scale
 
 
 
@@ -168,13 +166,14 @@ mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 output = {
     'accel': {
         'offset': [int(x * point_precision) for x in accel_fit[0]],
-        'scale': [int(x * scale_precision) for x in accel_fit[1].diagonal()]
+        'scale': [int(x * scale_precision) for x in accel_fit[1]]
     },
     'mag': {
         'offset': [int(x * point_precision) for x in mag_fit[0]],
-        'scale': [int(x * scale_precision) for x in mag_fit[1].diagonal()]
+        'scale': [int(x * scale_precision) for x in mag_fit[1]]
     }
 }
+
 print(output)
 
 

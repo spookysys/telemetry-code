@@ -1,9 +1,8 @@
-# Credit: aleksandrbazhin
-# URL: https://raw.githubusercontent.com/aleksandrbazhin/elipsoid_fit_python/master/ellipsoid_fit.py
+# Credit: aleksandrbazhin, modified by me to fit axis-aligned rather than arbitrarily oriented ellipsoid
+# URL (original): https://raw.githubusercontent.com/aleksandrbazhin/elipsoid_fit_python/master/ellipsoid_fit.py
 
 import numpy as np
 import math 
-
 
 
 def data_regularize(data, type="spheric", divs = 10):
