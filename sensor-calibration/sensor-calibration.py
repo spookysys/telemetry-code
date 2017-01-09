@@ -75,22 +75,51 @@ def ellipsoid_adjust(vec, center, TR):
 
 
 
-def analyze_gyro(accel_fitted, mag_fitted, gyro_raw):
-    expected = []
+def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
+    # Reconstruct midpoints between recorded samples
     observed = []
-    for f in range(len(accel_fitted)-1):
-        expected_rot_mat = rotation_from_two_vectors(
-            accel_fitted[f], mag_fitted[f],
-            accel_fitted[f+1], mag_fitted[f+1]
-        )
-        (expected_axis, expected_angle) = axangles.mat2axangle(expected_rot_mat)
-        expected_angle *= sample_hz / target_hz * 2**16
-        expected.append((expected_axis * expected_angle).tolist())
-
+    for f in range(len(gyro_raw)-1):
         observed_axis = normalize(normalize(gyro_raw[f]) + normalize(gyro_raw[f+1]))
         observed_angle = (np.linalg.norm(gyro_raw[f]) + np.linalg.norm(gyro_raw[f+1])) / 2
         observed.append((observed_axis * observed_angle).tolist())
-    return (expected, observed)
+
+    # Calculate expected rotation from accelerometer and magnetometer data
+    calculated = []
+    for f in range(len(accel_fitted)-1):
+        calculated_rot_mat = rotation_from_two_vectors(
+            accel_fitted[f], mag_fitted[f],
+            accel_fitted[f+1], mag_fitted[f+1]
+        )
+        (calculated_axis, calculated_angle) = axangles.mat2axangle(calculated_rot_mat)
+        calculated_angle *= sample_hz / target_hz * 2**16
+        calculated.append((calculated_axis * calculated_angle).tolist())
+
+    # Cull datapoints that might have overflowed the gyro, so they don't participate in calculating the fit
+    calculated_culled = []
+    observed_culled = []
+    for i in range(len(calculated)):
+        threshold = 1000000 / point_precision
+        if (abs(calculated[i][0]) < threshold and
+                abs(calculated[i][1]) < threshold and
+                abs(calculated[i][2]) < threshold):
+            calculated_culled.append(calculated[i])
+            observed_culled.append(observed[i])
+
+    # Calculate fitting
+    fit = affine_fit.Affine_Fit(observed_culled, calculated_culled)
+
+    # Fit the data
+    fitted_culled = [fit.Transform(vec) for vec in observed_culled]
+    fitted = [fit.Transform(vec) for vec in observed]
+
+    # Print a stat
+    print("Gyro points culled by overflow protection: ", len(calculated)-len(calculated_culled))
+
+    # Return
+    return (fit, calculated, fitted)
+
+
+
 
 
 def normalize(v):
@@ -118,47 +147,19 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
 
     return t0mat.T * t1mat
 
-
+# Load inputs
 accel_raw, mag_raw, gyro_raw = load_input()
 
+# Fit accelerometer and magnetometer to unit sphere
 accel_fit = ellipsoid_fit(accel_raw)
 mag_fit = ellipsoid_fit(mag_raw)
 
+# Calculate fitted data for accelerometer and magnetometer
 accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
 mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
 
-(gyro_expected_full, gyro_observed_full) = analyze_gyro(accel_fitted, mag_fitted, gyro_raw)
-
-
-
-# overflow culling
-gyro_expected_culled = []
-gyro_observed_culled = []
-for i in range(len(gyro_expected_full)):
-    observed_limit = 25000000 / point_precision
-    expected_limit = observed_limit / 25
-    # print(np.array(gyro_observed[i]) / gyro_expected[i])
-    if (abs(gyro_observed_full[i][0]) < observed_limit
-            and abs(gyro_observed_full[i][1]) < observed_limit
-            and abs(gyro_observed_full[i][2]) < observed_limit
-            and abs(gyro_expected_full[i][0]) < expected_limit
-            and abs(gyro_expected_full[i][1]) < expected_limit
-            and abs(gyro_expected_full[i][2]) < expected_limit):
-        gyro_expected_culled.append(gyro_expected_full[i])
-        gyro_observed_culled.append(gyro_observed_full[i])
-
-print("Gyro Overflow Filter before: ", len(gyro_expected_full), " after: ", len(gyro_expected_culled))
-
-
-gyro_fit = affine_fit.Affine_Fit(gyro_observed_culled, gyro_expected_culled)
-gyro_fitted_culled = [gyro_fit.Transform(vec) for vec in gyro_observed_culled]
-gyro_fitted_full = [gyro_fit.Transform(vec) for vec in gyro_observed_full]
-
-total_error = 0
-for i in range(len(gyro_fitted_culled)):
-    total_error += np.linalg.norm(np.array(gyro_fitted_culled[i]) - gyro_expected_culled[i])
-print("gyro avg error: ", total_error / len(gyro_fitted_culled))
-
+# Fit gyroscope data to 
+(gyro_fit, gyro_calculated, gyro_fitted) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
 
 ############################################
 ## PRINT OUTPUT
@@ -255,21 +256,21 @@ def gl_display():
         glShadeModel(GL_SMOOTH)
         glLineWidth(1)
         glBegin(GL_LINES)
-        for i in range(len(gyro_fitted_culled)):
+        for i in range(len(gyro_fitted)):
             glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_expected_culled[i]) * scale)
+            glVertex(np.array(gyro_calculated[i]) * scale)
             glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted_culled[i]) * scale)
+            glVertex(np.array(gyro_fitted[i]) * scale)
         glEnd()
 
         glShadeModel(GL_FLAT)
         glPointSize(3)
         glBegin(GL_POINTS)
-        for i in range(len(gyro_fitted_culled)):
+        for i in range(len(gyro_fitted)):
             glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_expected_culled[i]) * scale)
+            glVertex(np.array(gyro_calculated[i]) * scale)
             glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted_culled[i]) * scale)
+            glVertex(np.array(gyro_fitted[i]) * scale)
         glEnd()
 
 
@@ -304,10 +305,10 @@ def gl_display():
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
         glVertex(0, 0, 0)
-        glVertex(np.array(gyro_expected_full[f]) * scale)
+        glVertex(np.array(gyro_calculated[f]) * scale)
         glColor(1, .5, 1, 1)
         glVertex(0, 0, 0)
-        glVertex(np.array(gyro_fitted_full[f]) * scale)
+        glVertex(np.array(gyro_fitted[f]) * scale)
         glEnd()
 
 
