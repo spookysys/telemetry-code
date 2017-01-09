@@ -14,7 +14,6 @@ from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from transforms3d import axangles
 
-import affine_fit
 import ellipsoid_fit as ellipsoid_fit_py
 
 
@@ -54,6 +53,25 @@ def load_input():
     return accel_raw, mag_raw, gyro_raw
 
 
+def pointcloud_fit(from_pts, to_pts):
+    scale = []
+    offset = []
+    for axis_i in range(len(from_pts[0])):
+        a = [[v[axis_i], 1] for v in from_pts]
+        b = [v[axis_i] for v in to_pts]
+        x, resid, rank, s = np.linalg.lstsq(a, b)
+        scale.append(x[0])
+        offset.append(x[1]/x[0])
+    unit_scale = (scale[0]*scale[1]*scale[2]) ** (1./3.)
+    return (offset, scale, unit_scale)
+
+
+
+# return fitted value
+def adjust(vec, offset, scale):
+    return (np.array(vec) - offset) * scale
+
+
 
 def ellipsoid_fit(data):
     # Regularize
@@ -67,14 +85,17 @@ def ellipsoid_fit(data):
     TR = evecs.dot(D).dot(evecs.T)
 
     # Calculate unit (size of one unit after fitting)
-    unit = (radii[0]*radii[1]*radii[2]) ** (1./3.)
+    unit_scale = (radii[0]*radii[1]*radii[2]) ** (1./3.)
 
-    # Return the fit
-    return (offset.flatten(), TR.diagonal(), unit)
+    # Create the fit
+    fit = (offset.flatten(), TR.diagonal(), unit_scale)
 
-# return fitted value
-def ellipsoid_adjust(vec, offset, scale, unit):
-    return (vec - offset) * scale
+    # Process the data
+    fitted = [adjust(x, fit[0], fit[1]).tolist() for x in data]
+
+    # Return the fit and the fitted data
+    return (fit, fitted)
+
 
 
 
@@ -97,7 +118,8 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
         calculated_angle *= sample_hz / target_hz * 2**16
         calculated.append((calculated_axis * calculated_angle).tolist())
 
-    # Cull datapoints that might have overflowed the gyro, so they don't participate in calculating the fit
+    # Cull datapoints that might have overflowed the gyro,
+    # so they don't participate in calculating the fit
     calculated_culled = []
     observed_culled = []
     for i in range(len(calculated)):
@@ -108,18 +130,18 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
             calculated_culled.append(calculated[i])
             observed_culled.append(observed[i])
 
-    # Calculate fitting
-    fit = affine_fit.Affine_Fit(observed_culled, calculated_culled)
-
-    # Fit the data
-    fitted_culled = [fit.Transform(vec) for vec in observed_culled]
-    fitted = [fit.Transform(vec) for vec in observed]
-
-    # Print a stat
+    # Print a stat about the culling
     print("Gyro points culled by overflow protection: ", len(calculated)-len(calculated_culled))
 
+    # Calculate fitting
+    fit = pointcloud_fit(observed_culled, calculated_culled)
+
+    # Fit the data
+    fitted_culled = [adjust(vec, fit[0], fit[1]).tolist() for vec in observed_culled]
+    fitted = [adjust(vec, fit[0], fit[1]).tolist() for vec in observed]
+
     # Return
-    return (fit, calculated, fitted)
+    return (fit, fitted, calculated)
 
 
 
@@ -153,16 +175,10 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
 # Load inputs
 accel_raw, mag_raw, gyro_raw = load_input()
 
-# Fit accelerometer and magnetometer to unit sphere
-accel_fit = ellipsoid_fit(accel_raw)
-mag_fit = ellipsoid_fit(mag_raw)
-
-# Calculate fitted data for accelerometer and magnetometer
-accel_fitted = [ellipsoid_adjust(x, *accel_fit).tolist() for x in accel_raw]
-mag_fitted = [ellipsoid_adjust(x, *mag_fit).tolist() for x in mag_raw]
-
-# Fit gyroscope data to 
-(gyro_fit, gyro_calculated, gyro_fitted) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
+# Fit everything
+(accel_fit, accel_fitted) = ellipsoid_fit(accel_raw)
+(mag_fit, mag_fitted) = ellipsoid_fit(mag_raw)
+(gyro_fit, gyro_fitted, gyro_calculated) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
 
 ############################################
 ## PRINT OUTPUT
@@ -178,6 +194,11 @@ output = {
         'offset': [int(x * point_precision) for x in mag_fit[0]],
         'scale': [int(x * scale_precision) for x in mag_fit[1]],
         'unit': int(mag_fit[2] * point_precision)
+    },
+    'gyro': {
+        'offset': [int(x * point_precision) for x in gyro_fit[0]],
+        'scale': [int(x * scale_precision) for x in gyro_fit[1]],
+        'unit': int(gyro_fit[2] * point_precision)
     }
 }
 
@@ -306,7 +327,7 @@ def gl_display():
         glEnd()
 
     if draw_gyro_sticks:
-        scale = target_hz / 10 / 2**16
+        scale = target_hz / 400000
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
