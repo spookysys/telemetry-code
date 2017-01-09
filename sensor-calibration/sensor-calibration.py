@@ -1,36 +1,29 @@
 #!/usr/bin/env python3
 
-import functools
 import time
 import json
 import math
 import sys
-import functools
-from pprint import pprint
 
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from transforms3d import axangles
+import msgpack
 
 import ellipsoid_fit as ellipsoid_fit_py
 
 
 # settings
-target_hz = 200
-sample_hz = 10
-input_precision = 2**8 # precision of input points, and output offsets
-accel_offset_precision = 2**0
-accel_scale_precision = 2**22
-mag_offset_precision = 2**1
-mag_scale_precision = 2**16
-gyro_offset_precision = 2**-1
-gyro_scale_precision = 2**29
+sample_hz = 5 # calibration data at this rate
+input_precision = 2**8 # precision of input data
+
 
 # visualization
-autorotate = True
-draw_accel_mag_cloud = 0.25
+draw_autorotate = True
+draw_ortho = True
+draw_accel_mag_cloud = 0.75
 draw_gyro_cloud = False
 draw_axes = True
 draw_anim_accel_mag = True
@@ -60,43 +53,56 @@ def load_input():
 
 def pointcloud_fit(from_pts, to_pts):
     scale = []
-    offset = []
+    center = []
     for axis_i in range(len(from_pts[0])):
         a = [[v[axis_i], 1] for v in from_pts]
         b = [v[axis_i] for v in to_pts]
         x, resid, rank, s = np.linalg.lstsq(a, b)
         scale.append(x[0])
-        offset.append(x[1]/x[0])
-    unit_scale = (scale[0]*scale[1]*scale[2]) ** (1./3.)
-    return (offset, scale, unit_scale)
+        center.append(x[1]/x[0])
+
+    normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
+
+    return {
+        'center': center,
+        'rescale': scale / normalize,
+        'normalize': normalize
+    }
+
 
 
 
 # return fitted value
-def adjust(vec, offset, scale):
-    return (np.array(vec) - offset) * scale
+def adjust(vec, fit):
+    center = fit['center']
+    rescale = fit['rescale']
+    normalize = fit['normalize']
+    return ((np.array(vec) - center) * rescale) * normalize
 
 
 
-def ellipsoid_fit(data):
+def accel_mag_fit(data):
     # Regularize
     data2 = ellipsoid_fit_py.data_regularize(np.array(data), divs=8)
 
     # Calculate fit
-    offset, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
+    center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
 
-    # Calculate offset and scale and return
+    # Calculate center and scale and return
     D = np.diag(1 / radii)
     TR = evecs.dot(D).dot(evecs.T)
 
-    # Calculate unit (size of one unit after fitting)
-    unit_scale = (radii[0]*radii[1]*radii[2]) ** (1./3.)
-
     # Create the fit
-    fit = (offset.flatten(), TR.diagonal(), unit_scale)
+    scale = TR.diagonal()
+    normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
+    fit = {
+        'center': center.flatten(),
+        'rescale': scale / normalize,
+        'normalize': normalize
+    }
 
     # Process the data
-    fitted = [adjust(x, fit[0], fit[1]).tolist() for x in data]
+    fitted = [adjust(x, fit).tolist() for x in data]
 
     # Return the fit and the fitted data
     return (fit, fitted)
@@ -120,19 +126,23 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
             accel_fitted[f+1], mag_fitted[f+1]
         )
         (calculated_axis, calculated_angle) = axangles.mat2axangle(calculated_rot_mat)
-        calculated_angle *= sample_hz / target_hz 
+        calculated_angle *= sample_hz / (2*math.pi) # -> roundtrips per second
         calculated.append((calculated_axis * calculated_angle).tolist())
 
     # Cull datapoints that might have overflowed the gyro,
     # so they don't participate in calculating the fit
     calculated_culled = []
     observed_culled = []
+    used = []
     for i in range(len(calculated)):
-        th = 12 # threshold for culling
-        p = abs(np.array(calculated[i])*target_hz)
-        if (p[0] < th and p[1] < th and p[2] < th):
+        th = 0.9 # threshold for culling
+        p = abs(np.array(calculated[i]))
+        if p[0] < th and p[1] < th and p[2] < th:
             calculated_culled.append(calculated[i])
             observed_culled.append(observed[i])
+            used.append(True)
+        else:
+            used.append(False)
 
     # Print a stat about the culling
     print("Gyro points culled by overflow protection: ", len(calculated)-len(calculated_culled))
@@ -141,11 +151,11 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
     fit = pointcloud_fit(observed_culled, calculated_culled)
 
     # Fit the data
-    fitted_culled = [adjust(vec, fit[0], fit[1]).tolist() for vec in observed_culled]
-    fitted = [adjust(vec, fit[0], fit[1]).tolist() for vec in observed]
+    fitted_culled = [adjust(vec, fit).tolist() for vec in observed_culled]
+    fitted = [adjust(vec, fit).tolist() for vec in observed]
 
     # Return
-    return (fit, fitted, calculated)
+    return (fit, fitted, calculated, used)
 
 
 
@@ -180,30 +190,18 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
 accel_raw, mag_raw, gyro_raw = load_input()
 
 # Fit everything
-(accel_fit, accel_fitted) = ellipsoid_fit(accel_raw)
-(mag_fit, mag_fitted) = ellipsoid_fit(mag_raw)
-(gyro_fit, gyro_fitted, gyro_calculated) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
+(accel_fit, accel_fitted) = accel_mag_fit(accel_raw)
+(mag_fit, mag_fitted) = accel_mag_fit(mag_raw)
+(gyro_fit, gyro_fitted, gyro_calculated, gyro_used) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
 
 ############################################
 ## PRINT OUTPUT
 ############################################
 
 output = {
-    'accel': {
-        'offset': [int(x * accel_offset_precision) for x in accel_fit[0]],
-        'scale': [int(x * accel_scale_precision) for x in accel_fit[1]],
-        'unit': accel_fit[2]
-    },
-    'mag': {
-        'offset': [int(x * mag_offset_precision) for x in mag_fit[0]],
-        'scale': [int(x * mag_scale_precision) for x in mag_fit[1]],
-        'unit': mag_fit[2]
-    },
-    'gyro': {
-        'offset': [int(x * gyro_offset_precision) for x in gyro_fit[0]],
-        'scale': [int(x * gyro_scale_precision) for x in gyro_fit[1]],
-        'unit': gyro_fit[2]
-    }
+    'accel': accel_fit,
+    'mag': mag_fit,
+    'gyro': gyro_fit
 }
 
 print(output)
@@ -254,11 +252,11 @@ def gl_display():
               0, 1, 0)
 
 
-    scaler = 3
+    scaler = 2
     glRotate(gl_view_rotate[1]/scaler, 1, 0, 0)
     glRotate(gl_view_rotate[0]/scaler, 0, 1, 0)
 
-    if autorotate:
+    if draw_autorotate:
         rotMat = [axes[0][0], axes[1][0], axes[2][0], 0., axes[0][1], axes[1][1], axes[2][1], 0., axes[0][2], axes[1][2], axes[2][2], 0., 0., 0., 0., 1.]
         glMultMatrixd(rotMat)
 
@@ -281,27 +279,38 @@ def gl_display():
 
     # Draw gyro clouds
     if draw_gyro_cloud:
-        scale = target_hz / 10 / 2**16
         alpha = 0.5
+        scale = 1
+
+        c = [[1, 0, 1, alpha], [0, 1, 0, alpha], [.33, .33, .33, alpha*.33]]
+        v0 = np.array(gyro_calculated) * scale
+        v1 = np.array(gyro_fitted) * scale
 
         glShadeModel(GL_SMOOTH)
         glLineWidth(1)
         glBegin(GL_LINES)
         for i in range(len(gyro_fitted)):
-            glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_calculated[i]) * scale)
-            glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted[i]) * scale)
+            if gyro_used[i]:
+                glColor(c[0])
+                glVertex(v0[i])
+                glColor(c[1])
+                glVertex(v1[i])
+            else:
+                glColor(c[2])
+                glVertex(v0[i])
+                glColor(c[2])
+                glVertex(v1[i])
         glEnd()
 
         glShadeModel(GL_FLAT)
         glPointSize(3)
         glBegin(GL_POINTS)
         for i in range(len(gyro_fitted)):
-            glColor([1, 0, 1, alpha])
-            glVertex(np.array(gyro_calculated[i]) * scale)
-            glColor([1, 1, 1, alpha])
-            glVertex(np.array(gyro_fitted[i]) * scale)
+            if gyro_used[i]:
+                glColor(c[0])
+                glVertex(v0[i])
+                glColor(c[1])
+                glVertex(v1[i])
         glEnd()
 
 
@@ -331,7 +340,7 @@ def gl_display():
         glEnd()
 
     if draw_gyro_sticks:
-        scale = target_hz / 5
+        scale = 3
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
@@ -393,8 +402,10 @@ def gl_main():
     glutMouseFunc(gl_mouse_button)
     glutIdleFunc(gl_idle)
     glMatrixMode(GL_PROJECTION)
-    gluPerspective(40., 1., 1., 40.)
-    #glOrtho(-2, 2, -2, 2, 1, gl_eye_distance * 2)
+    if draw_ortho:
+        glOrtho(-2, 2, -2, 2, 1, gl_eye_distance * 2)
+    else:
+        gluPerspective(40., 1., 1., 40.)
     glMatrixMode(GL_MODELVIEW)
     glutMainLoop()
     return

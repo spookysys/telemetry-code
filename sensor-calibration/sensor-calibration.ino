@@ -83,7 +83,10 @@ void loop()
     led_on = !led_on;
     digitalWrite(pins::LED, led_on);
     
-    delay(200);
+    static const int delay = 200;
+    delay(delay);
+    Serial.println(String("Delay: ") + delay)
+    Serial.println(String("sample_hz: ") + 1000/delay)
 
     noInterrupts();
     {
