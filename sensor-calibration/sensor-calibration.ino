@@ -13,12 +13,12 @@ namespace
 
     struct SensorAccumData
     {
-        int imu_datas = 0;
-        std::array<int32_t, 3> accel_data{};
-        std::array<int32_t, 3> gyro_data{};
+        int imu_samples = 0;
+        std::array<int64_t, 3> accel_data{};
+        std::array<int64_t, 3> gyro_data{};
         int64_t gyro_mag;
-        int mag_datas = 0;
-        std::array<int32_t, 3> mag_data{};
+        int mag_samples = 0;
+        std::array<int64_t, 3> mag_data{};
     } akku;
 
 
@@ -26,7 +26,7 @@ namespace
     {
         // accumulate inertial data
         if (data.imu_valid) {
-            akku.imu_datas++;
+            akku.imu_samples++;
             // accumulate accelerometer vector
             akku.accel_data[0] += data.accel_data[0];
             akku.accel_data[1] += data.accel_data[1];
@@ -46,7 +46,7 @@ namespace
         }
         // accumulate magnetometer vector
         if (data.mag_valid) {
-            akku.mag_datas++;
+            akku.mag_samples++;
             akku.mag_data[0] += data.mag_data[0];
             akku.mag_data[1] += data.mag_data[1];
             akku.mag_data[2] += data.mag_data[2];
@@ -83,27 +83,30 @@ void loop()
     led_on = !led_on;
     digitalWrite(pins::LED, led_on);
     
-    static const int delay = 200;
-    delay(delay);
-    Serial.println(String("Delay: ") + delay)
-    Serial.println(String("sample_hz: ") + 1000/delay)
+    static const int json_sample_delay = 200;
+    delay(json_sample_delay);
+    Serial.println(String("Delay: ") + json_sample_delay);
+    Serial.println(String("sample_hz: ") + 1000/json_sample_delay);
 
     noInterrupts();
     {
         static unsigned long tick = 0;
 
         static const float point_precision = (1<<8);
-        float imu_scaler = point_precision / akku.imu_datas;
-        float mag_scaler = point_precision / akku.mag_datas;
+        float imu_scaler = point_precision / akku.imu_samples;
+        float mag_scaler = point_precision / akku.mag_samples;
 
         Serial.println("{");
+        Serial.println(String("  \"imu_samples\":") + akku.imu_samples + ",");
+        Serial.println(String("  \"mag_samples\":") + akku.mag_samples + ",");
         Serial.println(String("  \"tick\":") + tick + ",");
         Serial.println(String("  \"gyro\":[") + akku.gyro_data[0]*imu_scaler + "," + akku.gyro_data[1]*imu_scaler + "," + akku.gyro_data[2]*imu_scaler + "], \"gyro_mag\":" + akku.gyro_mag*imu_scaler + ",");
         Serial.println(String("  \"accel\":[") + akku.accel_data[0]*imu_scaler + "," + akku.accel_data[1]*imu_scaler + "," + akku.accel_data[2]*imu_scaler + "],");
         Serial.println(String("  \"mag\":[") + akku.mag_data[0]*mag_scaler + "," + akku.mag_data[1]*mag_scaler + "," + akku.mag_data[2]*mag_scaler + "]" );
         Serial.println("},");
 
-        akku = SensorAccumData{};
+        // just average forever
+        //akku = SensorAccumData{};
 
         tick++;
     }

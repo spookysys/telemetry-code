@@ -16,15 +16,14 @@ import ellipsoid_fit as ellipsoid_fit_py
 
 
 # settings
-sample_hz = 5 # calibration data at this rate
-input_precision = 2**8 # precision of input data
-
+sample_hz = 5 # rate of samples in json file (not sensor sample rate)
+output_filename = 'calibration_data.msg'
 
 # visualization
 draw_autorotate = True
 draw_ortho = True
-draw_accel_mag_cloud = 0.75
-draw_gyro_cloud = False
+draw_accel_mag_cloud = 0.2
+draw_gyro_cloud = True
 draw_axes = True
 draw_anim_accel_mag = True
 draw_gyro_sticks = True # Broken, because of overflow culling
@@ -42,10 +41,10 @@ def load_input():
     mag_raw = []
     gyro_raw = []
     for item in input_json:
-        accel_raw.append(np.array(item['accel']) / input_precision)
-        mag_raw.append(np.array(item['mag']) / input_precision)
-        gyro_axis = np.array(item['gyro']) / input_precision
-        gyro_mag = item['gyro_mag'] / input_precision
+        accel_raw.append(np.array(item['accel']))
+        mag_raw.append(np.array(item['mag']))
+        gyro_axis = np.array(item['gyro'])
+        gyro_mag = item['gyro_mag']
         gyro_raw.append(normalize(gyro_axis) * gyro_mag)
 
     return accel_raw, mag_raw, gyro_raw
@@ -59,7 +58,7 @@ def pointcloud_fit(from_pts, to_pts):
         b = [v[axis_i] for v in to_pts]
         x, resid, rank, s = np.linalg.lstsq(a, b)
         scale.append(x[0])
-        center.append(x[1]/x[0])
+        center.append(-x[1]/x[0])
 
     normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
 
@@ -135,9 +134,11 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
     observed_culled = []
     used = []
     for i in range(len(calculated)):
-        th = 0.9 # threshold for culling
+        th = [0.05, 0.8] # threshold for culling
         p = abs(np.array(calculated[i]))
-        if p[0] < th and p[1] < th and p[2] < th:
+        if (p[0] > th[0] and p[0] < th[1]
+                and p[1] >= th[0] and p[1] <= th[1]
+                and p[2] >= th[0] and p[2] <= th[1]):
             calculated_culled.append(calculated[i])
             observed_culled.append(observed[i])
             used.append(True)
@@ -205,16 +206,11 @@ output = {
 }
 print()
 
-print("Calibration Result:")
-print(output)
-print()
-
-print("Serializing...")
-with open('calib.msg', 'wb') as f:
+print("Serializing to", output_filename)
+with open(output_filename, 'wb') as f:
     packed_data = msgpack.packb(output)
     f.write(packed_data)
-print("Deserialized Result:")
-with open('calib.msg', 'rb') as f:
+with open(output_filename, 'rb') as f:
     packed_data = f.read()
     unpacked_data = msgpack.unpackb(packed_data)
     print(unpacked_data)
