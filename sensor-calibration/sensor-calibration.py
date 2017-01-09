@@ -18,10 +18,15 @@ import ellipsoid_fit as ellipsoid_fit_py
 
 
 # settings
-sample_hz = 10
 target_hz = 200
-point_precision = 2**8 # precision of input points, and output offsets
-scale_precision = 2**32 # precision of output scale factors
+sample_hz = 10
+input_precision = 2**8 # precision of input points, and output offsets
+accel_offset_precision = 2**0
+accel_scale_precision = 2**22
+mag_offset_precision = 2**1
+mag_scale_precision = 2**16
+gyro_offset_precision = 2**-1
+gyro_scale_precision = 2**29
 
 # visualization
 autorotate = True
@@ -44,10 +49,10 @@ def load_input():
     mag_raw = []
     gyro_raw = []
     for item in input_json:
-        accel_raw.append(np.array(item['accel']) / point_precision)
-        mag_raw.append(np.array(item['mag']) / point_precision)
-        gyro_axis = np.array(item['gyro']) / point_precision
-        gyro_mag = item['gyro_mag'] / point_precision
+        accel_raw.append(np.array(item['accel']) / input_precision)
+        mag_raw.append(np.array(item['mag']) / input_precision)
+        gyro_axis = np.array(item['gyro']) / input_precision
+        gyro_mag = item['gyro_mag'] / input_precision
         gyro_raw.append(normalize(gyro_axis) * gyro_mag)
 
     return accel_raw, mag_raw, gyro_raw
@@ -115,7 +120,7 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
             accel_fitted[f+1], mag_fitted[f+1]
         )
         (calculated_axis, calculated_angle) = axangles.mat2axangle(calculated_rot_mat)
-        calculated_angle *= sample_hz / target_hz * 2**16
+        calculated_angle *= sample_hz / target_hz 
         calculated.append((calculated_axis * calculated_angle).tolist())
 
     # Cull datapoints that might have overflowed the gyro,
@@ -123,10 +128,9 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
     calculated_culled = []
     observed_culled = []
     for i in range(len(calculated)):
-        threshold = 1000000 / point_precision
-        if (abs(calculated[i][0]) < threshold and
-                abs(calculated[i][1]) < threshold and
-                abs(calculated[i][2]) < threshold):
+        th = 12 # threshold for culling
+        p = abs(np.array(calculated[i])*target_hz)
+        if (p[0] < th and p[1] < th and p[2] < th):
             calculated_culled.append(calculated[i])
             observed_culled.append(observed[i])
 
@@ -186,19 +190,19 @@ accel_raw, mag_raw, gyro_raw = load_input()
 
 output = {
     'accel': {
-        'offset': [int(x * point_precision) for x in accel_fit[0]],
-        'scale': [int(x * scale_precision) for x in accel_fit[1]],
-        'unit': int(accel_fit[2] * point_precision)
+        'offset': [int(x * accel_offset_precision) for x in accel_fit[0]],
+        'scale': [int(x * accel_scale_precision) for x in accel_fit[1]],
+        'unit': accel_fit[2]
     },
     'mag': {
-        'offset': [int(x * point_precision) for x in mag_fit[0]],
-        'scale': [int(x * scale_precision) for x in mag_fit[1]],
-        'unit': int(mag_fit[2] * point_precision)
+        'offset': [int(x * mag_offset_precision) for x in mag_fit[0]],
+        'scale': [int(x * mag_scale_precision) for x in mag_fit[1]],
+        'unit': mag_fit[2]
     },
     'gyro': {
-        'offset': [int(x * point_precision) for x in gyro_fit[0]],
-        'scale': [int(x * scale_precision) for x in gyro_fit[1]],
-        'unit': int(gyro_fit[2] * point_precision)
+        'offset': [int(x * gyro_offset_precision) for x in gyro_fit[0]],
+        'scale': [int(x * gyro_scale_precision) for x in gyro_fit[1]],
+        'unit': gyro_fit[2]
     }
 }
 
@@ -327,7 +331,7 @@ def gl_display():
         glEnd()
 
     if draw_gyro_sticks:
-        scale = target_hz / 400000
+        scale = target_hz / 5
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
