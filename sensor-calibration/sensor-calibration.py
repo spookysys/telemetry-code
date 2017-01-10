@@ -17,18 +17,18 @@ import ellipsoid_fit as ellipsoid_fit_py
 # settings
 input_hz = 5 # rate of samples in json file (not sensor sample rate)
 output_filename = 'calibration_data.msg'
-gyro_cutoff = 2**15 * 0.8 # to protect against overflow
+gyro_cutoff = 2**15 * 0.75 # to protect against overflow
 gyro_scale = 250. / 360. / 2**15 # -> roundtrips per second
 
 # visualization
 draw_autorotate = True
 draw_ortho = True
-draw_accel_mag_cloud = 0.
+draw_accel_mag_cloud = 0
 draw_gyro_cloud = True
 draw_axes = True
 draw_anim_accel_mag = True
 draw_gyro_sticks = True # Broken, because of overflow culling
-draw_gyro_scale = 3
+draw_gyro_scale = 2
 
 
 
@@ -69,14 +69,16 @@ def pointcloud_offset_scale_fit(from_pts, to_pts):
 
 
 def pointcloud_scale_fit(from_pts, to_pts, offset):
+    rf, rt = ellipsoid_fit_py.data_regularize(np.array(from_pts), "spheric", 8, np.array(to_pts))
     scale = []
     for axis in range(len(from_pts[0])):
-        x = [x[axis] for x in from_pts]
-        y = [y[axis] for y in to_pts]
+        x = [x[axis] for x in rf]
+        y = [y[axis] for y in rt]
         slope = np.array(x).dot(y) / np.array(x).dot(x)
         scale.append(slope)
 
     normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
+    print("Expected normalize: ", gyro_scale)
     return {
         'center': offset,
         'rescale': (scale / normalize).tolist(),
@@ -145,8 +147,9 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset):
 
     # Flag datapoints that are safe from overflows
     safe = [
-        x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
-        for x in abs(np.array(calculated) / gyro_scale)
+        c[0] < gyro_cutoff and c[1] < gyro_cutoff and c[2] < gyro_cutoff and
+        o[0] < gyro_cutoff and o[1] < gyro_cutoff and o[2] < gyro_cutoff
+        for o, c in zip(abs(np.array(observed)), abs(np.array(calculated) / gyro_scale))
     ]
 
     # Print a stat about the culling

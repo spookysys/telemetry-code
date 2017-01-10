@@ -5,15 +5,17 @@ import numpy as np
 import math 
 
 
-def data_regularize(data, type="spheric", divs = 10):
+def data_regularize(data, type="spheric", divs = 10, extra = None):
     limits = np.array([
         [min(data[:,0]), max(data[:,0])],
         [min(data[:,1]), max(data[:,1])],
         [min(data[:,2]), max(data[:,2])]])
         
     regularized = []
+    regularized_extra = []
 
     if type=="cubic":
+        assert(False)
         
         X = np.linspace(*limits[0], num = divs)
         Y = np.linspace(*limits[1], num = divs)
@@ -55,14 +57,21 @@ def data_regularize(data, type="spheric", divs = 10):
         for i in range(divs_u - 1):
             for j in range(divs_v - 1):
                 points_in_sector = []
+                extra_in_sector = []
                 for k , point in enumerate(d_s):
                     if (point[1] >= u[i] and point[1] < u[i+1] and 
                         point[2] >= v[j] and point[2] < v[j+1]) :
 
                         points_in_sector.append(data[k])
 
+                        if extra is not None:
+                            extra_in_sector.append(extra[k])
+
                 if len(points_in_sector) > 0:
                     regularized.append(np.mean(np.array(points_in_sector), axis=0))
+
+                    if extra is not None:
+                        regularized_extra.append(np.mean(np.array(extra_in_sector), axis=0))
 
 ### Other strategy of finding mean values in sectors
 
@@ -76,8 +85,10 @@ def data_regularize(data, type="spheric", divs = 10):
 ##                    z = R*math.cos(U)
 ##                    regularized.append(center + np.array([x,y,z]))
     
-
-    return np.array(regularized)
+    if extra is not None:
+        return np.array(regularized), np.array(regularized_extra)
+    else:
+        return np.array(regularized)
 
 
 
