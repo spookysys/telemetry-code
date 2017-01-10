@@ -28,7 +28,7 @@ draw_gyro_cloud = True
 draw_axes = True
 draw_anim_accel_mag = True
 draw_gyro_sticks = True # Broken, because of overflow culling
-draw_gyro_scale = 2
+draw_gyro_scale = 3
 
 
 
@@ -50,7 +50,7 @@ def read_input():
     return (accel_raw, mag_raw, gyro_raw, gyro_offset)
 
 
-def pointcloud_fit(from_pts, to_pts):
+def pointcloud_offset_scale_fit(from_pts, to_pts):
     scale = []
     offset = []
     for axis in range(len(from_pts[0])):
@@ -59,6 +59,22 @@ def pointcloud_fit(from_pts, to_pts):
         fit = np.polyfit(x, y, 1)
         scale.append(fit[0])
         offset.append(fit[1])
+
+    normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
+    return {
+        'center': offset,
+        'rescale': (scale / normalize).tolist(),
+        'normalize': normalize
+    }
+
+
+def pointcloud_scale_fit(from_pts, to_pts, offset):
+    scale = []
+    for axis in range(len(from_pts[0])):
+        x = [x[axis] for x in from_pts]
+        y = [y[axis] for y in to_pts]
+        slope = np.array(x).dot(y) / np.array(x).dot(x)
+        scale.append(slope)
 
     normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
     return {
@@ -137,12 +153,11 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset):
     print("Gyro points passing overflow protection: ", sum(safe), " of ", len(calculated))
 
     # Calculate fitting
-    fit = pointcloud_fit(
+    fit = pointcloud_scale_fit(
         [x for i, x in enumerate(observed) if safe[i]],
-        [x for i, x in enumerate(calculated) if safe[i]]
+        [x for i, x in enumerate(calculated) if safe[i]],
+        gyro_offset
     )
-    print("Estimated gyro offset:", (np.array(fit['center']) / gyro_scale).tolist(), ' Read-in gyro offset:', gyro_offset)
-    # fit['center'] = gyro_offset # Override the calculated offset
 
     # Fit the data
     fitted = [adjust(vec, fit).tolist() for vec in observed]
