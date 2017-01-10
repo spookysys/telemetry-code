@@ -63,8 +63,6 @@ enum Modes
 };
 Modes mode = MODE_NONE;
 
-static const int settle_time = 30000;
-static const int rotation_output_delay = 200;
 
 float getError(const std::array<float, 3> &a, const std::array<float, 3> &b)
 {
@@ -79,6 +77,11 @@ float getError(const std::array<float, 3> &a, const std::array<float, 3> &b)
         tmp0 = tmp1;
     return tmp0;
 }
+
+static const float stability_threshold = 0.5;
+static const int stability_iterations = 100;
+static const int rotation_output_delay = 200;
+
 }
 
 void setup()
@@ -104,8 +107,6 @@ void setup()
         Serial.setTimeout(10000);
         mode = (Modes)Serial.readStringUntil('\n').toInt();
     } while (mode != 1 && mode != 2);
-
-    Serial.println(String("sample_hz: ") + 1000 / rotation_output_delay);
 
     // setup sensors
     sensors::setup(sensorUpdate);
@@ -158,10 +159,10 @@ void loop()
             // Try to detect when result has stabilized
             static std::array<float, 3> stable_candidate = interm_res;
             float error = getError(stable_candidate, interm_res);
-            if (error <= 1.f)
+            if (error < stability_threshold)
             {
                 num_stable_results++;
-                Serial.print(String() + " - stable! (" + num_stable_results + ")");
+                Serial.print(String() + " - " + num_stable_results + "/" + stability_iterations);
             }
             else
             {
@@ -171,17 +172,19 @@ void loop()
 
             Serial.println();
 
-        } while (num_stable_results < 20);
+        } while (num_stable_results < stability_iterations);
 
         // Remember result
         results.push_back(interm_res);
 
         // Print results so far
+        Serial.println();
         Serial.println("Results so far:");
         Serial.println("[");
         for (const auto &res : results)
             Serial.println(String("  [") + res[0] + "," + res[1] + "," + res[2] + "],");
         Serial.println("]");
+        Serial.println();
 
         // Wait for keypress
         Serial.println("Shake the unit, put it down, and press enter (or wait 10 seconds)");
@@ -208,6 +211,7 @@ void loop()
         interrupts();
 
         // Output data
+        if (tick==0) Serial.println(String("\"sample_hz:\"") + 1000 / rotation_output_delay + ",");
         double imu_scaler = 1.0 / akku.imu_samples;
         double mag_scaler = 1.0 / akku.mag_samples;
         Serial.println("{");
