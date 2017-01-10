@@ -34,7 +34,11 @@ draw_gyro_scale = 2
 
 def read_input():
     if len(sys.argv) != 2:
-        raise FileNotFoundError("Please specify rotation data input file as only argument")
+        raise FileNotFoundError("Please specify rotation data input file as only argument.\
+            (gyro_offset.json is implicitly read for gyro offset vector)")
+
+    with open("gyro_offset.json") as jsonfile:
+        gyro_offset = json.load(jsonfile)['gyro_offset']
 
     with open(sys.argv[1]) as jsonfile:
         input_json = json.load(jsonfile)
@@ -43,7 +47,7 @@ def read_input():
     mag_raw = [normalize(item['mag']) * item['mag_mag'] for item in input_json]
     gyro_raw = [normalize(item['gyro']) * item['gyro_mag'] for item in input_json]
 
-    return (accel_raw, mag_raw, gyro_raw)
+    return (accel_raw, mag_raw, gyro_raw, gyro_offset)
 
 
 def pointcloud_fit(from_pts, to_pts):
@@ -104,7 +108,7 @@ def accel_mag_fit(data):
 
 
 
-def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
+def gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset):
     # Reconstruct midpoints between recorded samples
     observed = []
     for i in range(len(gyro_raw)-1):
@@ -137,8 +141,9 @@ def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
         [x for i, x in enumerate(observed) if safe[i]],
         [x for i, x in enumerate(calculated) if safe[i]]
     )
+    print("Estimated gyro offset:", (np.array(fit['center']) / gyro_scale).tolist(), ' Read-in gyro offset:', gyro_offset)
+    # fit['center'] = gyro_offset # Override the calculated offset
 
-    print(fit)
     # Fit the data
     fitted = [adjust(vec, fit).tolist() for vec in observed]
 
@@ -175,12 +180,12 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
     return t0mat.T * t1mat
 
 # Load inputs
-(accel_raw, mag_raw, gyro_raw) = read_input()
+(accel_raw, mag_raw, gyro_raw, gyro_offset) = read_input()
 
 # Fit everything
 (accel_fit, accel_fitted) = accel_mag_fit(accel_raw)
 (mag_fit, mag_fitted) = accel_mag_fit(mag_raw)
-(gyro_fit, gyro_fitted, gyro_calculated, gyro_safe) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
+(gyro_fit, gyro_fitted, gyro_calculated, gyro_safe) = gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset)
 
 ############################################
 ## SERIALIZE AND PRINT OUTPUT
