@@ -102,8 +102,8 @@ void setup()
     do
     {
         Serial.println("Please select what to calibrate");
-        Serial.println("1) Gyro offset at rest");
-        Serial.println("2) Accelerometer, magnetometer and gyro during rotation");
+        Serial.println("1) Gyro offset");
+        Serial.println("2) Rotation");
         Serial.setTimeout(10000);
         mode = (Modes)Serial.readStringUntil('\n').toInt();
     } while (mode != 1 && mode != 2);

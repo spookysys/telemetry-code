@@ -41,3 +41,34 @@ Threshold +- 1.0
   [-69.15,-1003.68,245.59],
   [-75.06,-1079.50,254.94],
 ]
+
+
+
+-------------------------
+
+require 100 stable iterations 
+threshold +- 0.5
+
+
+Results so far:
+[
+
+]
+
+
+Results so far:
+[
+  [-55.77,-1021.69,240.53], # hanging
+  [-21.43,-953.71,200.01],  # table
+  [-30.75,-960.43,221.81],  # table
+  [-46.70,-1007.30,230.26], # hanging
+  [-52.56,-1025.49,250.09], # hanging
+  [-42.23,-999.34,216.17],  # hanging (no shaking)
+  [-31.18,-988.78,197.44],  # hanging (no shaking)
+  [-49.17,-1013.36,234.65], # hanging (no shaking)
+  [20.47,-891.37,238.89],   # standing upright on computer
+  [2.62,-936.73,306.59]     # standing upright on computer, with battery
+  [1.44,-932.43,301.33],    # standing upright on computer, with battery (no shaking)
+
+
+]
