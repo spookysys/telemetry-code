@@ -116,20 +116,6 @@ namespace
         int gyro_scale = 0;  // 250 dps
         int accel_scale = 0; // 2 g
 
-        // Convert to degrees per tick, in x:2
-        static int gyroScale(int scale)
-        {
-            static const int gyro_hertz = 200;
-            switch (scale) {
-                case 0: return (250<<2)/gyro_hertz;
-                case 1: return (500<<2)/gyro_hertz;
-                case 2: return (1000<<2)/gyro_hertz;
-                case 3: return (2000<<2)/gyro_hertz;
-                default: assert(0); 
-            }
-            return 0;
-        }
-
     public:
         // Howto interrupt: https://github.com/kriswiner/MPU-9250/issues/57
 
@@ -242,14 +228,12 @@ namespace
                 {
                     readBytes(ADDR, FIFO_R_W, packet_size, (uint8_t *)&packet_data[0]);
                 }
-                // TODO: Scale
                 accel[0] = misc::swapEndianness(packet_data[0]);
                 accel[1] = misc::swapEndianness(packet_data[1]);
                 accel[2] = misc::swapEndianness(packet_data[2]);
-                // Unit: degrees per tick, in 16:16
-                gyro[0] = (gyroScale(gyro_scale) * misc::swapEndianness(packet_data[3]))>>1;
-                gyro[1] = (gyroScale(gyro_scale) * misc::swapEndianness(packet_data[4]))>>1;
-                gyro[2] = (gyroScale(gyro_scale) * misc::swapEndianness(packet_data[5]))>>1;
+                gyro[0]  = misc::swapEndianness(packet_data[3]) ;
+                gyro[1]  = misc::swapEndianness(packet_data[4]);
+                gyro[2]  = misc::swapEndianness(packet_data[5]);
                 return true;
             }
             else

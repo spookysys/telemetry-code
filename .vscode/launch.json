@@ -9,7 +9,7 @@
         "program": "${file}",
         "cwd": "${workspaceRoot}/sensor-calibration",
         "args": [
-            "calibration_data_1.json"
+            "rotation.json"
         ],
         "debugOptions": [
             "WaitOnAbnormalExit",

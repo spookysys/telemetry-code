@@ -1,69 +1,64 @@
 #!/usr/bin/env python3
 
-import time
 import json
 import math
 import sys
+import time
 
+import msgpack
 import numpy as np
 from OpenGL.GL import *
 from OpenGL.GLU import *
 from OpenGL.GLUT import *
 from transforms3d import axangles
-import msgpack
 
 import ellipsoid_fit as ellipsoid_fit_py
 
-
 # settings
-sample_hz = 5 # rate of samples in json file (not sensor sample rate)
+input_hz = 5 # rate of samples in json file (not sensor sample rate)
 output_filename = 'calibration_data.msg'
+gyro_cutoff = 2**15 * 0.8 # to protect against overflow
+gyro_scale = 250. / 360. / 2**15 # -> roundtrips per second
 
 # visualization
 draw_autorotate = True
 draw_ortho = True
-draw_accel_mag_cloud = 0.2
+draw_accel_mag_cloud = 0.
 draw_gyro_cloud = True
 draw_axes = True
 draw_anim_accel_mag = True
 draw_gyro_sticks = True # Broken, because of overflow culling
+draw_gyro_scale = 2
 
 
 
-def load_input():
+def read_input():
     if len(sys.argv) != 2:
-        raise FileNotFoundError("Please specify input file as only argument")
+        raise FileNotFoundError("Please specify rotation data input file as only argument")
 
     with open(sys.argv[1]) as jsonfile:
         input_json = json.load(jsonfile)
 
-    accel_raw = []
-    mag_raw = []
-    gyro_raw = []
-    for item in input_json:
-        accel_raw.append(np.array(item['accel']))
-        mag_raw.append(np.array(item['mag']))
-        gyro_axis = np.array(item['gyro'])
-        gyro_mag = item['gyro_mag']
-        gyro_raw.append(normalize(gyro_axis) * gyro_mag)
+    accel_raw = [normalize(item['accel']) * item['accel_mag'] for item in input_json]
+    mag_raw = [normalize(item['mag']) * item['mag_mag'] for item in input_json]
+    gyro_raw = [normalize(item['gyro']) * item['gyro_mag'] for item in input_json]
 
-    return accel_raw, mag_raw, gyro_raw
+    return (accel_raw, mag_raw, gyro_raw)
 
 
 def pointcloud_fit(from_pts, to_pts):
     scale = []
-    center = []
-    for axis_i in range(len(from_pts[0])):
-        a = [[v[axis_i], 1] for v in from_pts]
-        b = [v[axis_i] for v in to_pts]
-        x, resid, rank, s = np.linalg.lstsq(a, b)
-        scale.append(x[0])
-        center.append(-x[1]/x[0])
+    offset = []
+    for axis in range(len(from_pts[0])):
+        x = [x[axis] for x in from_pts]
+        y = [y[axis] for y in to_pts]
+        fit = np.polyfit(x, y, 1)
+        scale.append(fit[0])
+        offset.append(fit[1])
 
     normalize = (scale[0] * scale[1] * scale[2]) ** (1/3)
-
     return {
-        'center': center,
+        'center': offset,
         'rescale': (scale / normalize).tolist(),
         'normalize': normalize
     }
@@ -112,51 +107,43 @@ def accel_mag_fit(data):
 def gyro_fit(accel_fitted, mag_fitted, gyro_raw):
     # Reconstruct midpoints between recorded samples
     observed = []
-    for f in range(len(gyro_raw)-1):
-        observed_axis = normalize(normalize(gyro_raw[f]) + normalize(gyro_raw[f+1]))
-        observed_angle = (np.linalg.norm(gyro_raw[f]) + np.linalg.norm(gyro_raw[f+1])) / 2
-        observed.append((observed_axis * observed_angle).tolist())
+    for i in range(len(gyro_raw)-1):
+        vec = normalize(normalize(gyro_raw[i]) + normalize(gyro_raw[i+1]))
+        mag = (np.linalg.norm(gyro_raw[i]) + np.linalg.norm(gyro_raw[i+1])) / 2
+        observed.append((vec * mag).tolist())
 
     # Calculate expected rotation from accelerometer and magnetometer data
     calculated = []
-    for f in range(len(accel_fitted)-1):
-        calculated_rot_mat = rotation_from_two_vectors(
-            accel_fitted[f], mag_fitted[f],
-            accel_fitted[f+1], mag_fitted[f+1]
+    for i in range(len(accel_fitted)-1):
+        rot_mat = rotation_from_two_vectors(
+            accel_fitted[i], mag_fitted[i],
+            accel_fitted[i+1], mag_fitted[i+1]
         )
-        (calculated_axis, calculated_angle) = axangles.mat2axangle(calculated_rot_mat)
-        calculated_angle *= sample_hz / (2*math.pi) # -> roundtrips per second
-        calculated.append((calculated_axis * calculated_angle).tolist())
+        (vec, mag) = axangles.mat2axangle(rot_mat)
+        mag *= input_hz / (2*math.pi) # -> roundtrips per second
+        calculated.append((vec * mag).tolist())
 
-    # Cull datapoints that might have overflowed the gyro,
-    # so they don't participate in calculating the fit
-    calculated_culled = []
-    observed_culled = []
-    used = []
-    for i in range(len(calculated)):
-        th = [0.05, 0.8] # threshold for culling
-        p = abs(np.array(calculated[i]))
-        if (p[0] > th[0] and p[0] < th[1]
-                and p[1] >= th[0] and p[1] <= th[1]
-                and p[2] >= th[0] and p[2] <= th[1]):
-            calculated_culled.append(calculated[i])
-            observed_culled.append(observed[i])
-            used.append(True)
-        else:
-            used.append(False)
+    # Flag datapoints that are safe from overflows
+    safe = [
+        x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
+        for x in abs(np.array(calculated) / gyro_scale)
+    ]
 
     # Print a stat about the culling
-    print("Gyro points culled by overflow protection: ", len(calculated)-len(calculated_culled))
+    print("Gyro points passing overflow protection: ", sum(safe), " of ", len(calculated))
 
     # Calculate fitting
-    fit = pointcloud_fit(observed_culled, calculated_culled)
+    fit = pointcloud_fit(
+        [x for i, x in enumerate(observed) if safe[i]],
+        [x for i, x in enumerate(calculated) if safe[i]]
+    )
 
+    print(fit)
     # Fit the data
-    fitted_culled = [adjust(vec, fit).tolist() for vec in observed_culled]
     fitted = [adjust(vec, fit).tolist() for vec in observed]
 
     # Return
-    return (fit, fitted, calculated, used)
+    return (fit, fitted, calculated, safe)
 
 
 
@@ -188,12 +175,12 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
     return t0mat.T * t1mat
 
 # Load inputs
-accel_raw, mag_raw, gyro_raw = load_input()
+(accel_raw, mag_raw, gyro_raw) = read_input()
 
 # Fit everything
 (accel_fit, accel_fitted) = accel_mag_fit(accel_raw)
 (mag_fit, mag_fitted) = accel_mag_fit(mag_raw)
-(gyro_fit, gyro_fitted, gyro_calculated, gyro_used) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
+(gyro_fit, gyro_fitted, gyro_calculated, gyro_safe) = gyro_fit(accel_fitted, mag_fitted, gyro_raw)
 
 ############################################
 ## SERIALIZE AND PRINT OUTPUT
@@ -289,7 +276,7 @@ def gl_display():
     # Draw gyro clouds
     if draw_gyro_cloud:
         alpha = 0.5
-        scale = 1
+        scale = draw_gyro_scale
 
         c = [[1, 0, 1, alpha], [0, 1, 0, alpha], [.33, .33, .33, alpha*.33]]
         v0 = np.array(gyro_calculated) * scale
@@ -299,7 +286,7 @@ def gl_display():
         glLineWidth(1)
         glBegin(GL_LINES)
         for i in range(len(gyro_fitted)):
-            if gyro_used[i]:
+            if gyro_safe[i]:
                 glColor(c[0])
                 glVertex(v0[i])
                 glColor(c[1])
@@ -315,7 +302,7 @@ def gl_display():
         glPointSize(3)
         glBegin(GL_POINTS)
         for i in range(len(gyro_fitted)):
-            if gyro_used[i]:
+            if gyro_safe[i]:
                 glColor(c[0])
                 glVertex(v0[i])
                 glColor(c[1])
@@ -349,7 +336,7 @@ def gl_display():
         glEnd()
 
     if draw_gyro_sticks:
-        scale = 3
+        scale = draw_gyro_scale
         glLineWidth(4)
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)

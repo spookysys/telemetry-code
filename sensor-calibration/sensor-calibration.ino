@@ -15,11 +15,13 @@ void wireKhz(int wire_khz)
 struct SensorAccumData
 {
     int imu_samples = 0;
+    int mag_samples = 0;
     std::array<int64_t, 3> accel_data{};
     std::array<int64_t, 3> gyro_data{};
-    int64_t gyro_mag;
-    int mag_samples = 0;
     std::array<int64_t, 3> mag_data{};
+    int64_t accel_mag = 0;
+    int64_t gyro_mag = 0;
+    int64_t mag_mag = 0;
 } akku_shared;
 
 void sensorUpdate(const sensors::SensorData &data)
@@ -34,6 +36,10 @@ void sensorUpdate(const sensors::SensorData &data)
         akku.accel_data[0] += data.accel_data[0];
         akku.accel_data[1] += data.accel_data[1];
         akku.accel_data[2] += data.accel_data[2];
+        // accumulate accelerometer magnitude
+        int64_t accel_mag_squared = int64_t(data.accel_data[0]) * data.accel_data[0] + int64_t(data.accel_data[1]) * data.accel_data[1] + int64_t(data.accel_data[2]) * data.accel_data[2];
+        int64_t accel_mag = sqrt(accel_mag_squared);
+        akku.accel_mag += accel_mag;
         // accumulate gyro axis
         akku.gyro_data[0] += data.gyro_data[0];
         akku.gyro_data[1] += data.gyro_data[1];
@@ -42,8 +48,6 @@ void sensorUpdate(const sensors::SensorData &data)
         int64_t gyro_mag_squared = int64_t(data.gyro_data[0]) * data.gyro_data[0] + int64_t(data.gyro_data[1]) * data.gyro_data[1] + int64_t(data.gyro_data[2]) * data.gyro_data[2];
         int64_t gyro_mag = sqrt(gyro_mag_squared);
         akku.gyro_mag += gyro_mag;
-        // gyro axis and magnitude are accumulated separately to overcome shortening of vector when averaging
-        // this is not done for accelerometer and magnetometer, since for them I'm mostly interested in direction
     }
     // accumulate magnetometer vector
     if (data.mag_valid)
@@ -52,14 +56,18 @@ void sensorUpdate(const sensors::SensorData &data)
         akku.mag_data[0] += data.mag_data[0];
         akku.mag_data[1] += data.mag_data[1];
         akku.mag_data[2] += data.mag_data[2];
+        // accumulate magnetometer magnitude
+        int64_t mag_mag_squared = int64_t(data.mag_data[0]) * data.mag_data[0] + int64_t(data.mag_data[1]) * data.mag_data[1] + int64_t(data.mag_data[2]) * data.mag_data[2];
+        int64_t mag_mag = sqrt(mag_mag_squared);
+        akku.mag_mag += mag_mag;
     }
 }
 
 enum Modes
 {
     MODE_NONE = 0,
-    MODE_GYRO_OFFSET = 1,
-    MODE_ROTATION = 2
+    MODE_ROTATION = 1,
+    MODE_GYRO_OFFSET = 2
 };
 Modes mode = MODE_NONE;
 
@@ -99,14 +107,13 @@ void setup()
     for (int i = 0; !SerialUSB; i++)
         delay(100);
 
-    do
-    {
-        Serial.println("Please select what to calibrate");
-        Serial.println("1) Gyro offset");
-        Serial.println("2) Rotation");
-        Serial.setTimeout(10000);
-        mode = (Modes)Serial.readStringUntil('\n').toInt();
-    } while (mode != 1 && mode != 2);
+    Serial.println("Please select what to calibrate");
+    Serial.println("1) Mag- and accelerometer (default)");
+    Serial.println("2) Gyro offset");
+    Serial.setTimeout(10000);
+    mode = (Modes)Serial.readStringUntil('\n').toInt();
+    if (mode != MODE_ROTATION && mode != MODE_GYRO_OFFSET) 
+        mode = MODE_ROTATION;
 
     // setup sensors
     sensors::setup(sensorUpdate);
@@ -211,17 +218,17 @@ void loop()
         interrupts();
 
         // Output data
-        if (tick==0) Serial.println(String("\"sample_hz:\"") + 1000 / rotation_output_delay + ",");
+        if (tick==0) Serial.println(String("\"sample_hz\":") + 1000 / rotation_output_delay + ",");
         double imu_scaler = 1.0 / akku.imu_samples;
         double mag_scaler = 1.0 / akku.mag_samples;
         Serial.println("{");
         Serial.println(String("  \"tick\":") + tick + ",");
-        Serial.println(String("  \"time\":") + time + ",");
+        //Serial.println(String("  \"time\":") + time + ",");
         //Serial.println(String("  \"imu_samples\":") + akku.imu_samples + ",");
         //Serial.println(String("  \"mag_samples\":") + akku.mag_samples + ",");
         Serial.println(String("  \"gyro\":[") + akku.gyro_data[0] * imu_scaler + "," + akku.gyro_data[1] * imu_scaler + "," + akku.gyro_data[2] * imu_scaler + "], \"gyro_mag\":" + akku.gyro_mag * imu_scaler + ",");
-        Serial.println(String("  \"accel\":[") + akku.accel_data[0] * imu_scaler + "," + akku.accel_data[1] * imu_scaler + "," + akku.accel_data[2] * imu_scaler + "],");
-        Serial.println(String("  \"mag\":[") + akku.mag_data[0] * mag_scaler + "," + akku.mag_data[1] * mag_scaler + "," + akku.mag_data[2] * mag_scaler + "]");
+        Serial.println(String("  \"accel\":[") + akku.accel_data[0] * imu_scaler + "," + akku.accel_data[1] * imu_scaler + "," + akku.accel_data[2] * imu_scaler + "], \"accel_mag\":" + akku.accel_mag * imu_scaler + ",");
+        Serial.println(String("  \"mag\":[") + akku.mag_data[0] * mag_scaler + "," + akku.mag_data[1] * mag_scaler + "," + akku.mag_data[2] * mag_scaler + "], \"mag_mag\":" + akku.mag_mag * mag_scaler);
         Serial.println("},");
 
         tick++;
