@@ -19,9 +19,9 @@ import ellipsoid_fit as ellipsoid_fit_py
 # settings
 input_hz = 50 # rate of samples in json file (not sensor sample rate)
 output_filename = 'calibration_data.msg'
-gyro_cutoff = 2**15 * 0.75 # to protect against overflow
-gyro_scale = 250. / 360. / 2**15 # -> rotations per second
-estimate_gyro_offset = False # if false, gyro-offset is read from gyro_offset.json
+gyro_cutoff = 2**15 * 1.9 # protect against overflow
+gyro_scale = 250. / 2**15 / 360. # -> rotations per second
+estimate_gyro_offset = True # if false, gyro-offset is read from gyro_offset.json
 rota_smoothing = 39
 
 # visualization
@@ -31,8 +31,8 @@ draw_accel_mag_cloud = 0
 draw_gyro_cloud = False
 draw_axes = True
 draw_anim_accel_mag = True
-draw_gyro_sticks = False # Broken, because of overflow culling
-draw_gyro_scale = .2
+draw_gyro_sticks = True
+draw_gyro_scale = 1.0 / 2**15
 
 
 
@@ -48,11 +48,11 @@ def read_input():
     with open(sys.argv[1]) as jsonfile:
         input_json = json.load(jsonfile)
 
-    accel_raw = [normalized_vector(item['accel']) * item['accel_mag'] for item in input_json]
-    mag_raw = [normalized_vector(item['mag']) * item['mag_mag'] for item in input_json]
-    gyro_raw = [normalized_vector(item['gyro']) * item['gyro_mag'] for item in input_json]
+    accel = [normalized_vector(item['accel']) * item['accel_mag'] for item in input_json]
+    mag = [normalized_vector(item['mag']) * item['mag_mag'] for item in input_json]
+    gyro = [normalized_vector(item['gyro']) * item['gyro_mag'] for item in input_json]
 
-    return (accel_raw, mag_raw, gyro_raw, gyro_offset)
+    return (accel, mag, gyro, gyro_offset)
 
 
 def pointcloud_offset_scale_fit(from_pts, to_pts):
@@ -128,7 +128,7 @@ def accel_mag_fit(data):
 
 
 
-def calculate_rotations(accel, mag):
+def calculate_expected_gyro(accel, mag):
     length = len(accel)
 
     # Create rotation matrices from accel/mag lists
@@ -137,30 +137,33 @@ def calculate_rotations(accel, mag):
             accel[(i - 1) % length], mag[(i - 1) % length],
             accel[(i + 1) % length], mag[(i + 1) % length]
         )
-        for i in range(length)
+        for i in range(1, length-1)
     ]
+    matrices.insert(0, matrices[0])
+    matrices.append(matrices[-1])
 
-    # Convert matrices to quaternions in gyroscope terms
+    # Convert matrices to gyroscope-compatible scaled axis
     def cvt(x):
-        axangle = list(t3d.axangles.mat2axangle(x))
-        axangle[1] *= input_hz  # per second
-        axangle[1] /= 2*math.pi # radians to rotations per second
-        axangle[1] /= gyro_scale # whatever unit the gyro uses
-        return t3d.quaternions.axangle2quat(*axangle)
+        (d, m) = t3d.axangles.mat2axangle(x)
+        m *= input_hz  # per second
+        m /= 2*math.pi # radians to rotations per second
+        m /= gyro_scale # whatever unit the gyro uses
+        return d * m
+
     return [cvt(x) for x in matrices]
 
 
-def gyro_to_quats(gyro_raw):
+def gyro_to_quats(gyro):
     # Convert to quaternions
     return [
         normalized_vector(
             t3d.quaternions.axangle2quat(x, np.linalg.norm(x))
         )
-        for x in gyro_raw
+        for x in gyro
     ]
 
 
-def smooth_vector_list(data, window_length=5, poly_order=3):
+def smooth_vector_list(data, window_length, poly_order=2):
     data = np.array(data).transpose()
     return np.array([
         scipy.signal.savgol_filter(
@@ -172,67 +175,53 @@ def smooth_vector_list(data, window_length=5, poly_order=3):
     ]).transpose()
 
 
-def smooth_normalized_vector_list(data, window_length=5, poly_order=3):
+def smooth_normalized_vector_list(data, window_length, poly_order=2):
     return [
         normalized_vector(x)
         for x in smooth_vector_list(data, window_length, poly_order)
     ]
 
+def smooth_circular_path(data, window_length, poly_order=2):
+    magnitudes = [np.linalg.norm(x) for x in data]
+    directions = [x/y for x, y in zip(data, magnitudes)]
+    magnitudes = scipy.signal.savgol_filter(magnitudes, window_length, poly_order)
+    directions = smooth_vector_list(directions, window_length, poly_order)
+    return [x*y for x, y in zip(directions, magnitudes)]
 
-def gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset):
-    # Reconstruct midpoints between recorded samples
-    observed = []
-    for i in range(len(gyro_raw)-1):
-        vec = normalized_vector(normalized_vector(gyro_raw[i]) + normalized_vector(gyro_raw[i+1]))
-        mag = (np.linalg.norm(gyro_raw[i]) + np.linalg.norm(gyro_raw[i+1])) / 2
-        observed.append((vec * mag).tolist())
 
-    # Calculate expected rotation from accelerometer and magnetometer data
-    calculated = []
-    for i in range(len(accel_fitted)-1):
-        rot_mat = rotation_from_two_vectors(
-            accel_fitted[i], mag_fitted[i],
-            accel_fitted[i+1], mag_fitted[i+1]
-        )
-        (vec, mag) = t3d.axangles.mat2axangle(rot_mat)
-        mag *= input_hz / (2*math.pi) # -> roundtrips per second
-        calculated.append((vec * mag).tolist())
-
+def gyro_fit(observed, expected, gyro_offset):
     # Flag datapoints that are safe from overflows
-    gyro_raw_safe = [
-        x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
-        for x in np.abs(np.array(gyro_raw))
-    ]
     observed_safe = [
-        gyro_raw_safe[i] and gyro_raw_safe[i+1]
-        for i in range(len(gyro_raw)-1)
-    ]
-    calculated_safe = [
         x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
-        for x in np.abs(np.array(calculated) / gyro_scale)
+        for x in np.abs(np.array(observed))
+    ]
+    expected_safe = [
+        x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
+        for x in np.abs(np.array(expected))
     ]
     safe = [
         x and y
-        for x, y in zip(observed_safe, calculated_safe)
+        for x, y in zip(observed_safe, expected_safe)
     ]
 
     # Print a stat about the culling
-    print("Gyro points passing overflow protection: ", sum(safe), " of ", len(calculated))
+    print("Observed points passing overflow protection: ", sum(observed_safe), " of ", len(observed))
+    print("Expected points passing overflow protection: ", sum(expected_safe), " of ", len(observed))
+    print("Gyro points passing overflow protection: ", sum(safe), " of ", len(observed))
 
-    # Calculate fitting
+    # Calculate fit
     observed_safe = [x for i, x in enumerate(observed) if safe[i]]
-    calculated_safe = [x for i, x in enumerate(calculated) if safe[i]]
-    observed_reg, calculated_reg = ellipsoid_fit_py.data_regularize(np.array(observed_safe), "cubic", 10, np.array(calculated_safe))
+    expected_safe = [x for i, x in enumerate(expected) if safe[i]]
     if estimate_gyro_offset:
-        fit = pointcloud_offset_scale_fit(observed_reg, calculated_reg)
+        fit = pointcloud_offset_scale_fit(observed_safe, expected_safe)
     else:
-        fit = pointcloud_scale_fit(observed_reg, calculated_reg, gyro_offset)
+        fit = pointcloud_scale_fit(observed_safe, expected_safe, gyro_offset)
 
-    # Fit the data
-    fitted = [adjust(vec, fit).tolist() for vec in observed]
+    # Fit gyro data
+    fitted = [adjust(x, fit) for x in gyro]
 
     # Return
-    return (fit, fitted, calculated, safe)
+    return (fit, fitted, safe)
 
 
 
@@ -269,37 +258,21 @@ def quat_list_drawable(quat_list):
 
 
 # Load inputs
-(accel_raw, mag_raw, gyro_raw, gyro_offset) = read_input()
+(accel, mag, gyro, gyro_offset) = read_input()
+
+# Smooth accelerometer and magnetometer paths
+accel = smooth_circular_path(accel, rota_smoothing)
+mag = smooth_circular_path(mag, rota_smoothing)
 
 # Fit accelerometer and magnetometer
-(accel_fit, accel_fitted) = accel_mag_fit(accel_raw)
-(mag_fit, mag_fitted) = accel_mag_fit(mag_raw)
+(accel_fit, accel_fitted) = accel_mag_fit(accel)
+(mag_fit, mag_fitted) = accel_mag_fit(mag)
 
-# Prepare gyroscope fitting
-gyro_quats = gyro_to_quats(gyro_raw)
-rota_quats = calculate_rotations(accel_fitted, mag_fitted)
+# Calculate expected gyro 
+expected_gyro = calculate_expected_gyro(accel_fitted, mag_fitted)
 
-# simply kill all points that don't pass the safe test
-gyro_safe = [
-    gyro_overflow_check(gyro_raw[i]) and np.isfinite(rota_quats[i]).all()
-    for i in range(len(gyro_raw))
-]
-gyro_quats = [x for i, x in enumerate(gyro_quats) if gyro_safe[i]]
-rota_quats = [x for i, x in enumerate(rota_quats) if gyro_safe[i]]
-
-# Smooth gyro and rota lists
-gyro_quats = smooth_normalized_vector_list(gyro_quats, rota_smoothing, 3)
-rota_quats = smooth_normalized_vector_list(rota_quats, rota_smoothing, 3)
-
-gyro_drawable = quat_list_drawable(gyro_quats)
-rota_drawable = quat_list_drawable(rota_quats)
-
-
-# (gyro_fit, gyro_fitted, gyro_calculated, gyro_safe) = gyro_fit(accel_fitted, mag_fitted, gyro_raw, gyro_offset)
-#rota_reg, gyro_reg = ellipsoid_fit_py.data_regularize(np.array(rota_quats), "cubic", 16, np.array(gyro_quats))
-
-gyro_fit = pointcloud_offset_scale_fit(gyro_drawable, rota_drawable)
-gyro_fitted = [adjust(x, gyro_fit) for x in gyro_quats]
+# Fit gyro
+(gyro_fit, gyro_fitted, gyro_safe) = gyro_fit(gyro, expected_gyro, gyro_offset)
 
 
 
@@ -313,17 +286,9 @@ output = {
     'gyro': gyro_fit
 }
 print()
+pprint(output)
 
-print("Serializing to", output_filename)
-with open(output_filename, 'wb') as f:
-    packed_data = msgpack.packb(output)
-    f.write(packed_data)
-with open(output_filename, 'rb') as f:
-    packed_data = f.read()
-    unpacked_data = msgpack.unpackb(packed_data)
-    print(unpacked_data)
 print()
-
 print("Running visualization")
 
 ############################################
@@ -344,10 +309,10 @@ def gl_display():
         t = time.time() - gl_start_time
     t *= 4
     d = t % 1
-    f = int(t) % (len(accel_raw)-1)
+    f = int(t) % (len(accel)-1)
     accel_vec = (1-d)*np.array(accel_fitted[f]) + d*np.array(accel_fitted[f+1])
     mag_vec = (1-d)*np.array(mag_fitted[f]) + d*np.array(mag_fitted[f+1])
-    gyro_vec = (1-d)*np.array(gyro_raw[f]) + d*np.array(gyro_raw[f+1])
+    gyro_vec = (1-d)*np.array(gyro[f]) + d*np.array(gyro[f+1])
 
     # Calculate axes
     axes = [
@@ -388,48 +353,59 @@ def gl_display():
             alpha = draw_accel_mag_cloud
             glPointSize(3)
             glLineWidth(1)
-            glColor([[1, 0, 1, alpha], [0, 1, 0, alpha]][i])
-            glBegin(GL_POINTS)
+            glColor([[1, 0, 1, alpha], [0, .5, 0, alpha]][i])
+            glBegin(GL_LINE_STRIP)
+            #glBegin(GL_POINTS)
             for p in [accel_fitted, mag_fitted][i]:
                 glVertex(p)
             glEnd()
 
+
+    # Draw gyro strips
     if True:
-        alpha = 0.5
         for i in range(2):
+            alpha = 0.8
+            glPointSize(3)
             glLineWidth(1)
             glColor([[1, 0, 1, alpha], [0, .5, 0, alpha]][i])
-            glBegin(GL_LINE_STRIP)
-            for p in [rota_drawable, gyro_fitted][i]:
-                glVertex(p * draw_gyro_scale)
+            l = [gyro, expected_gyro][i]
+            glBegin(GL_LINES)
+            for j in range(len(l)-1):
+                if gyro_safe[j] and gyro_safe[j+1]:
+                    glVertex(l[j] * draw_gyro_scale)
+                    glVertex(l[j+1] * draw_gyro_scale)
             glEnd()
+
+
 
     # Draw gyro clouds
     if draw_gyro_cloud:
         alpha = 0.5
 
         c = [[1, 0, 1, alpha], [0, 1, 0, alpha]]
-        v0 = np.array(rota_drawable) * draw_gyro_scale
-        v1 = np.array(gyro_fitted) * draw_gyro_scale
+        v0 = np.array(expected_gyro) * draw_gyro_scale
+        v1 = np.array(gyro) * draw_gyro_scale
 
         glShadeModel(GL_SMOOTH)
         glLineWidth(1)
         glBegin(GL_LINES)
-        for i in range(len(gyro_fitted)):
-            glColor(c[0])
-            glVertex(v0[i])
-            glColor(c[1])
-            glVertex(v1[i])
+        for i in range(len(gyro)):
+            if gyro_safe[i]:
+                glColor(c[0])
+                glVertex(v0[i])
+                glColor(c[1])
+                glVertex(v1[i])
         glEnd()
 
         glShadeModel(GL_FLAT)
         glPointSize(3)
         glBegin(GL_POINTS)
-        for i in range(len(gyro_fitted)):
-            glColor(c[0])
-            glVertex(v0[i])
-            glColor(c[1])
-            glVertex(v1[i])
+        for i in range(len(gyro)):
+            if gyro_safe[i]:
+                glColor(c[0])
+                glVertex(v0[i])
+                glColor(c[1])
+                glVertex(v1[i])
         glEnd()
 
 
@@ -464,10 +440,10 @@ def gl_display():
         glBegin(GL_LINES)
         glColor(1, 1, .5, 1)
         glVertex(0, 0, 0)
-        glVertex(np.array(gyro_calculated[f]) * scale)
+        glVertex(np.array(expected_gyro[f]) * scale)
         glColor(1, .5, 1, 1)
         glVertex(0, 0, 0)
-        glVertex(np.array(gyro_fitted[f]) * scale)
+        glVertex(np.array(gyro[f]) * scale)
         glEnd()
 
 

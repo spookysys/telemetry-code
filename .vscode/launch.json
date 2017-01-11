@@ -4,12 +4,12 @@
         "name": "Calibration Analyzer",
         "type": "python",
         "request": "launch",
-        "stopOnEntry": true,
+        "stopOnEntry": false,
         "pythonPath": "${config.python.pythonPath}",
         "program": "${file}",
         "cwd": "${workspaceRoot}/sensor-calibration",
         "args": [
-            "rotation.json"
+            "rotation4.json"
         ],
         "debugOptions": [
             "WaitOnAbnormalExit",
