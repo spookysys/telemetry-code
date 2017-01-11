@@ -15,7 +15,6 @@ def data_regularize(data, type="spheric", divs = 10, extra = None):
     regularized_extra = []
 
     if type=="cubic":
-        assert(False)
         
         X = np.linspace(*limits[0], num = divs)
         Y = np.linspace(*limits[1], num = divs)
@@ -25,14 +24,21 @@ def data_regularize(data, type="spheric", divs = 10, extra = None):
             for j in range(divs-1):
                 for k in range(divs-1):
                     points_in_sector = []
-                    for point in data:
+                    extra_in_sector = []
+                    for idx, point in enumerate(data):
                         if (point[0] >= X[i] and point[0] < X[i+1] and
                             point[1] >= Y[j] and point[1] < Y[j+1] and
                             point[2] >= Z[k] and point[2] < Z[k+1]) :
                             
                             points_in_sector.append(point)
+                            if extra is not None:
+                                extra_in_sector.append(extra[idx])
+
                     if len(points_in_sector) > 0:
                         regularized.append(np.mean(np.array(points_in_sector), axis=0))
+                        if extra is not None:
+                            regularized_extra.append(np.mean(np.array(extra_in_sector), axis=0))
+
 
     elif type=="spheric" :
         divs_u = divs 

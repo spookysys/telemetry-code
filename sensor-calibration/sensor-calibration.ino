@@ -12,6 +12,7 @@ void wireKhz(int wire_khz)
     sercom3.enableWIRE();
 }
 
+
 struct SensorAccumData
 {
     int imu_samples = 0;
@@ -22,11 +23,16 @@ struct SensorAccumData
     int64_t accel_mag = 0;
     int64_t gyro_mag = 0;
     int64_t mag_mag = 0;
-} akku_shared;
+};
+volatile int64_t akku_pre = 0;
+volatile int64_t akku_post = 0;
+volatile SensorAccumData akku_shared;
 
 void sensorUpdate(const sensors::SensorData &data)
 {
-    auto &akku = ::akku_shared;
+    akku_pre++;
+    SensorAccumData akku;
+    memcpy(&akku, (void*)&::akku_shared, sizeof(SensorAccumData));
 
     // accumulate inertial data
     if (data.imu_valid)
@@ -61,6 +67,9 @@ void sensorUpdate(const sensors::SensorData &data)
         int64_t mag_mag = sqrt(mag_mag_squared);
         akku.mag_mag += mag_mag;
     }
+
+    memcpy((void*)&::akku_shared, &akku, sizeof(SensorAccumData));
+    akku_post++;
 }
 
 enum Modes
@@ -88,7 +97,7 @@ float getError(const std::array<float, 3> &a, const std::array<float, 3> &b)
 
 static const float stability_threshold = 0.5;
 static const int stability_iterations = 100;
-static const int rotation_output_delay = 200;
+static const int rotation_output_delay = 20;
 
 }
 
@@ -120,7 +129,12 @@ void setup()
 
     // Clear sensor akku
     noInterrupts();
-    akku_shared = SensorAccumData{};
+    if (akku_pre!=akku_post) {
+        Serial.println("Race!");
+        while(1);
+    }
+    auto tmp = SensorAccumData{};
+    memcpy((void*)&::akku_shared, &tmp, sizeof(SensorAccumData));
     interrupts();
 }
 
@@ -142,7 +156,12 @@ void loop()
         std::array<float, 3> interm_res;
         long num_stable_results = 0;
         noInterrupts();
-        ::akku_shared = SensorAccumData{};
+        if (akku_pre!=akku_post) {
+            Serial.println("Race!");
+            while(1);
+        }
+        auto tmp = SensorAccumData{};
+        memcpy((void*)&::akku_shared, &tmp, sizeof(SensorAccumData));
         interrupts();
         do
         {
@@ -151,7 +170,12 @@ void loop()
 
             // Read data
             noInterrupts();
-            const SensorAccumData akku = ::akku_shared;
+            if (akku_pre!=akku_post) {
+                Serial.println("Race!");
+                while(1);
+            }
+            SensorAccumData akku;
+            memcpy(&akku, (void*)&::akku_shared, sizeof(SensorAccumData));
             interrupts();
 
             // Average gyro data from beginning of 'do'
@@ -213,8 +237,14 @@ void loop()
 
         // Read out and reset accumulated sensor data
         noInterrupts();
-        const SensorAccumData akku = ::akku_shared;
-        ::akku_shared = SensorAccumData{};
+        if (akku_pre!=akku_post) {
+            Serial.println("Race!");
+            while(1);
+        }
+        SensorAccumData akku;
+        memcpy(&akku, (void*)&::akku_shared, sizeof(SensorAccumData)); 
+        auto tmp = SensorAccumData{};
+        memcpy((void*)&::akku_shared, &tmp, sizeof(SensorAccumData));        
         interrupts();
 
         // Output data
