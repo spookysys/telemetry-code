@@ -6,6 +6,8 @@ import math
 
 
 def data_regularize(data, type="spheric", divs = 10, extra = None):
+    data = np.array(data)
+    
     limits = np.array([
         [min(data[:,0]), max(data[:,0])],
         [min(data[:,1]), max(data[:,1])],

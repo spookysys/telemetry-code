@@ -19,20 +19,21 @@ import ellipsoid_fit as ellipsoid_fit_py
 # settings
 input_hz = 50 # rate of samples in json file (not sensor sample rate)
 output_filename = 'calibration_data.msg'
-gyro_cutoff = 2**15 * 1.9 # protect against overflow
-gyro_scale = 250. / 2**15 / 360. # -> rotations per second
-estimate_gyro_offset = True # if false, gyro-offset is read from gyro_offset.json
-rota_smoothing = 39
+gyro_cutoff = 2**15 * 0.95 # protect against overflow
+gyro_scale = 2 * 250. / 2**15 / 360. # -> rotations per second (why 2x ?)
+estimate_gyro_offset = False # if false, gyro-offset is read from gyro_offset.json
+rota_smoothing = 49
 
 # visualization
 draw_autorotate = True
 draw_ortho = True
 draw_accel_mag_cloud = 0
-draw_gyro_cloud = False
+draw_gyro_strips = True
+draw_gyro_fit = False
 draw_axes = True
 draw_anim_accel_mag = True
 draw_gyro_sticks = True
-draw_gyro_scale = 1.0 / 2**15
+draw_gyro_scale = 1. / 2**15
 
 
 
@@ -102,10 +103,10 @@ def adjust(vec, fit):
 
 def accel_mag_fit(data):
     # Regularize
-    data2 = ellipsoid_fit_py.data_regularize(np.array(data), divs=8)
+    data_regular = ellipsoid_fit_py.data_regularize(np.array(data), divs=8)
 
     # Calculate fit
-    center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data2))
+    center, radii, evecs, v = ellipsoid_fit_py.ellipsoid_fit(np.array(data_regular))
 
     # Calculate center and scale and return
     D = np.diag(1 / radii)
@@ -153,16 +154,6 @@ def calculate_expected_gyro(accel, mag):
     return [cvt(x) for x in matrices]
 
 
-def gyro_to_quats(gyro):
-    # Convert to quaternions
-    return [
-        normalized_vector(
-            t3d.quaternions.axangle2quat(x, np.linalg.norm(x))
-        )
-        for x in gyro
-    ]
-
-
 def smooth_vector_list(data, window_length, poly_order=2):
     data = np.array(data).transpose()
     return np.array([
@@ -175,11 +166,6 @@ def smooth_vector_list(data, window_length, poly_order=2):
     ]).transpose()
 
 
-def smooth_normalized_vector_list(data, window_length, poly_order=2):
-    return [
-        normalized_vector(x)
-        for x in smooth_vector_list(data, window_length, poly_order)
-    ]
 
 def smooth_circular_path(data, window_length, poly_order=2):
     magnitudes = [np.linalg.norm(x) for x in data]
@@ -189,8 +175,7 @@ def smooth_circular_path(data, window_length, poly_order=2):
     return [x*y for x, y in zip(directions, magnitudes)]
 
 
-def gyro_fit(observed, expected, gyro_offset):
-    # Flag datapoints that are safe from overflows
+def gyro_safe(observed, expected):
     observed_safe = [
         x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
         for x in np.abs(np.array(observed))
@@ -209,6 +194,13 @@ def gyro_fit(observed, expected, gyro_offset):
     print("Expected points passing overflow protection: ", sum(expected_safe), " of ", len(observed))
     print("Gyro points passing overflow protection: ", sum(safe), " of ", len(observed))
 
+    return safe
+
+
+def gyro_fit(observed, expected, gyro_offset, safe):
+    # regularize
+    expected_regular, observed_regular = ellipsoid_fit_py.data_regularize(expected, type="cubic", divs=9, extra=observed)
+
     # Calculate fit
     observed_safe = [x for i, x in enumerate(observed) if safe[i]]
     expected_safe = [x for i, x in enumerate(expected) if safe[i]]
@@ -221,7 +213,7 @@ def gyro_fit(observed, expected, gyro_offset):
     fitted = [adjust(x, fit) for x in gyro]
 
     # Return
-    return (fit, fitted, safe)
+    return (fit, fitted, observed_regular, expected_regular)
 
 
 
@@ -245,20 +237,13 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
     return t0mat.T * t1mat
 
 
-def gyro_overflow_check(vec):
-    x = np.abs(np.array(vec))
-    return x[0] < gyro_cutoff and x[1] < gyro_cutoff and x[2] < gyro_cutoff
-
-
-def quat_list_drawable(quat_list):
-    def cvt(x):
-        tmp = t3d.quaternions.quat2axangle(x)
-        return tmp[0] * tmp[1]
-    return np.array([cvt(x) for x in quat_list])
-
 
 # Load inputs
 (accel, mag, gyro, gyro_offset) = read_input()
+
+# Smooth gyro
+gyro_orig = gyro
+gyro = smooth_circular_path(gyro, rota_smoothing)
 
 # Smooth accelerometer and magnetometer paths
 accel = smooth_circular_path(accel, rota_smoothing)
@@ -271,8 +256,11 @@ mag = smooth_circular_path(mag, rota_smoothing)
 # Calculate expected gyro 
 expected_gyro = calculate_expected_gyro(accel_fitted, mag_fitted)
 
+# Determine which gyro points are safe from Overflow
+gyro_safe = gyro_safe(gyro_orig, expected_gyro)
+
 # Fit gyro
-(gyro_fit, gyro_fitted, gyro_safe) = gyro_fit(gyro, expected_gyro, gyro_offset)
+(gyro_fit, gyro_fitted, gyro_observed_regular, gyro_expected_regular) = gyro_fit(gyro, expected_gyro, gyro_offset, gyro_safe)
 
 
 
@@ -362,13 +350,13 @@ def gl_display():
 
 
     # Draw gyro strips
-    if True:
-        for i in range(2):
+    if draw_gyro_strips:
+        for i in (0, 1, 2):
             alpha = 0.8
             glPointSize(3)
             glLineWidth(1)
-            glColor([[1, 0, 1, alpha], [0, .5, 0, alpha]][i])
-            l = [gyro, expected_gyro][i]
+            glColor([[0, 0, 1, alpha], [0, .5, 0, alpha], [.75, 0, 0, alpha]][i])
+            l = [gyro, expected_gyro, gyro_fitted][i]
             glBegin(GL_LINES)
             for j in range(len(l)-1):
                 if gyro_safe[j] and gyro_safe[j+1]:
@@ -378,18 +366,18 @@ def gl_display():
 
 
 
-    # Draw gyro clouds
-    if draw_gyro_cloud:
+    # Draw gyro fit cloud
+    if draw_gyro_fit:
         alpha = 0.5
 
-        c = [[1, 0, 1, alpha], [0, 1, 0, alpha]]
-        v0 = np.array(expected_gyro) * draw_gyro_scale
-        v1 = np.array(gyro) * draw_gyro_scale
+        c = [[1, 0, 1, alpha], [0, .5, 0, alpha]]
+        v0 = np.array(gyro_observed_regular) * draw_gyro_scale
+        v1 = np.array(gyro_expected_regular) * draw_gyro_scale
 
         glShadeModel(GL_SMOOTH)
         glLineWidth(1)
         glBegin(GL_LINES)
-        for i in range(len(gyro)):
+        for i in range(len(gyro_observed_regular)):
             if gyro_safe[i]:
                 glColor(c[0])
                 glVertex(v0[i])
@@ -400,7 +388,7 @@ def gl_display():
         glShadeModel(GL_FLAT)
         glPointSize(3)
         glBegin(GL_POINTS)
-        for i in range(len(gyro)):
+        for i in range(len(gyro_observed_regular)):
             if gyro_safe[i]:
                 glColor(c[0])
                 glVertex(v0[i])
