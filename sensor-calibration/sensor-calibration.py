@@ -21,18 +21,18 @@ input_hz = 50 # rate of samples in json file (not sensor sample rate)
 output_filename = 'calibration_data.msg'
 gyro_cutoff = 2**15 * 0.95 # protect against overflow
 gyro_scale = 2 * 250. / 2**15 / 360. # -> rotations per second (why 2x ?)
-estimate_gyro_offset = False # if false, gyro-offset is read from gyro_offset.json
+estimate_gyro_offset = True # if false, gyro-offset is read from gyro_offset.json
 rota_smoothing = 49
 
 # visualization
 draw_autorotate = True
 draw_ortho = True
-draw_accel_mag_cloud = 0
-draw_gyro_strips = True
-draw_gyro_fit = False
 draw_axes = True
-draw_anim_accel_mag = True
-draw_gyro_sticks = True
+draw_accel_mag = True
+draw_accel_mag_cloud = 0.5
+draw_gyro_fit = False
+draw_gyro_strips = False
+draw_gyro_sticks = False
 draw_gyro_scale = 1. / 2**15
 
 
@@ -243,11 +243,11 @@ def rotation_from_two_vectors(t0v0, t0v1, t1v0, t1v1):
 
 # Smooth gyro
 gyro_orig = gyro
-gyro = smooth_circular_path(gyro, rota_smoothing)
+#gyro = smooth_circular_path(gyro, rota_smoothing)
 
 # Smooth accelerometer and magnetometer paths
-accel = smooth_circular_path(accel, rota_smoothing)
-mag = smooth_circular_path(mag, rota_smoothing)
+#accel = smooth_circular_path(accel, rota_smoothing)
+#mag = smooth_circular_path(mag, rota_smoothing)
 
 # Fit accelerometer and magnetometer
 (accel_fit, accel_fitted) = accel_mag_fit(accel)
@@ -270,8 +270,8 @@ gyro_safe = gyro_safe(gyro_orig, expected_gyro)
 
 output = {
     'accel': accel_fit,
-    'mag': mag_fit,
-    'gyro': gyro_fit
+    'mag': mag_fit
+#    'gyro': gyro_fit
 }
 print()
 pprint(output)
@@ -341,7 +341,7 @@ def gl_display():
             alpha = draw_accel_mag_cloud
             glPointSize(3)
             glLineWidth(1)
-            glColor([[1, 0, 1, alpha], [0, .5, 0, alpha]][i])
+            glColor([[.5, 0, 1, alpha], [0, 1, 0, alpha]][i])
             glBegin(GL_LINE_STRIP)
             #glBegin(GL_POINTS)
             for p in [accel_fitted, mag_fitted][i]:
@@ -397,10 +397,10 @@ def gl_display():
         glEnd()
 
 
-    if draw_anim_accel_mag:
+    if draw_accel_mag:
         glLineWidth(1)
         glBegin(GL_LINES)
-        glColor(1, 0, 1)
+        glColor(.5, 0, 1)
         glVertex(0, 0, 0)
         glVertex(accel_vec)
         glColor(0, 1, 0)
