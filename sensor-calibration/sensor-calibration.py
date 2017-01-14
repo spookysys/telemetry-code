@@ -253,7 +253,7 @@ gyro_orig = gyro
 (accel_fit, accel_fitted) = accel_mag_fit(accel)
 (mag_fit, mag_fitted) = accel_mag_fit(mag)
 
-# Calculate expected gyro 
+# Calculate expected gyro
 expected_gyro = calculate_expected_gyro(accel_fitted, mag_fitted)
 
 # Determine which gyro points are safe from Overflow
@@ -271,7 +271,7 @@ gyro_safe = gyro_safe(gyro_orig, expected_gyro)
 output = {
 	'accel': accel_fit,
 	'mag': mag_fit
-#   'gyro': gyro_fit
+#    'gyro': gyro_fit
 }
 print()
 pprint(output)
