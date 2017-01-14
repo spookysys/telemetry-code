@@ -4,8 +4,8 @@
 
 namespace watchdog
 {
-  extern void setup();
-  extern void tickle();
-  extern void reboot();
+	extern void setup();
+	extern void tickle();
+	extern void reboot();
 }
 

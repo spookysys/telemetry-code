@@ -2,6 +2,6 @@
 
 namespace telelink
 {
-    static bool setup() { return true; }
+	static bool setup() { return true; }
 
 }
