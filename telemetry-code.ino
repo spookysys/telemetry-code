@@ -1,7 +1,7 @@
 #include "common.hpp"
 #include "pins.hpp"
 #include "sensors.hpp"
-#include "telelink.hpp"
+#include "modem.hpp"
 #include "events.hpp"
 #include "regtek.hpp"
 #include "watchdog.hpp"
@@ -71,10 +71,9 @@ void setup() {
 	SerialUSB.println(String("Yo! ") + last_i);
 		
 	// Init modules
-	bool sensors_ok = sensors::setup(regtek::sensorUpdate);
-	assert(sensors_ok);
-	bool telelink_ok = telelink::setup();
-	assert(telelink_ok);
+	sensors::setup(regtek::sensorUpdate);
+	modem::setup(nullptr, nullptr);
+
 	
 	// Indicate correct or errorenous operation by blinking
 	common::assert_channel.subscribe([&](unsigned long time, const char* msg) {

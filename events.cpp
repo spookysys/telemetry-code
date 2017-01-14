@@ -106,17 +106,16 @@ namespace events
 	{
 		unsigned long time = millis();
 		
+		// Stop interrupts for channel selection
 		noInterrupts();
-
-		//for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-		//logger.println();
 		
 		// run events and flag executed ones as invalid
 		for (int i = 0; i < (int)channel_events().size(); ) {
 			auto& item_ref = channel_events()[i];
 			if (item_ref.valid && time >= item_ref.time) {
-				auto callbackCaller = item_ref.callbackCaller;
 				item_ref.valid = false;
+				// Enable interrupts while running the channel
+				auto callbackCaller = item_ref.callbackCaller;
 				interrupts(); // item_ref could now get clobbered
 				callbackCaller(time);
 				noInterrupts();
@@ -125,9 +124,6 @@ namespace events
 			}
 		}
 		
-		//for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-		//logger.println();
-
 		// compact the list, removing invalid events
 		{
 			auto r = channel_events().begin();
@@ -141,22 +137,22 @@ namespace events
 			for (auto& iter : channel_events()) assert(iter.valid);
 		}
 
-		//for (auto& iter : channel_events()) logger.write(iter.valid?'1':'0');
-		//logger.println();
-
+		// Continue interrupts for channel selection
 		interrupts();
-		//logger.println();
 
+		// Run processes
 		for (auto& iter : processes()) {
 			iter->runIfNeeded(time);
 		}
 
+		// Ticke watchdog
 		watchdog::tickle();
 	}
 }
 
+// Main arduino loop!
 void loop() {    
 	events::loop();
-	for (int i=0; i<10; i++) delay(10);
+	delay(100);
 }
 

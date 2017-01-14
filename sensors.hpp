@@ -17,6 +17,6 @@ namespace sensors
 		int32_t alt_t{};
 	};
 
-	extern bool setup(void (*isrCallback)(const SensorData&));
+	extern void setup(void (*isrCallback)(const SensorData&));
 
 }

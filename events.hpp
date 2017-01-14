@@ -45,7 +45,8 @@ namespace events
 		
 		Channel<Params...>& subscribe(void (*callback)(unsigned long, Params...));
 		
-		Channel<Params...>& publish(long long time, Params... params);
+		Channel<Params...>& publishAt(long long time, Params... params);
+		Channel<Params...>& publishIn(long long time, Params... params);
 		Channel<Params...>& publish(Params... params);
 	};
 
@@ -58,12 +59,18 @@ namespace events
 	}
 	
 	template<typename ... Params>
-	Channel<Params...>& Channel<Params...>::publish(long long time, Params... params)
+	Channel<Params...>& Channel<Params...>::publishAt(long long time, Params... params)
 	{
 		publishImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
 		return *this;
 	}
 	
+	template<typename ... Params>
+	Channel<Params...>& Channel<Params...>::publishIn(long long time, Params... params)
+	{
+		publishAt(millis()+time, params...);
+	}
+
 	template<typename ... Params>
 	Channel<Params...>& Channel<Params...>::publish(Params... params)
 	{

@@ -143,16 +143,14 @@ namespace
 			writeByte(ADDR, INT_PIN_CFG, 0x02); // allows access to magnetometer (I think)
 		}
 
-		bool setup()
+		void setup()
 		{
-			bool ok = true;
-			
 			// Identify
 			uint8_t c = readByte(ADDR, WHO_AM_I);
 			if (c != WHO_AM_I_ANSWER)
 			{
 				logger.println(String("MPU failed to identify: ") + String(c, HEX));
-				ok = false;
+				assert(false);
 			}
 
 			// Setup clock
@@ -220,7 +218,8 @@ namespace
 			// Enable Raw Sensor Data Ready interrupt to propagate to interrupt pin
 			writeByte(ADDR, INT_ENABLE, 0x01); // Enable data ready (bit 0) interrupt
 
-			return ok;
+			// Final Check
+			assert(readByte(ADDR, WHO_AM_I)==WHO_AM_I_ANSWER);
 		}
 
 		bool read(std::array<int32_t, 3> &accel, std::array<int32_t, 3> &gyro)
@@ -295,15 +294,13 @@ namespace
 		std::array<uint8_t, 3> adjust;
 
 	public:
-		bool setup()
+		void setup()
 		{
-			bool ok = true;
-
 			uint8_t c = readByte(ADDR, WHO_AM_I);
 			if (c != WHO_AM_I_ANSWER)
 			{
 				logger.println(String("Magnetometer failed to identify: ") + String(c, HEX));
-				ok = false;
+				assert(false);
 			}
 
 			// Power down magnetometer
@@ -316,7 +313,8 @@ namespace
 			writeByte(ADDR, CNTL, 0x16); // 16 bit, 100Hz acquisition
 			delay(10);
 
-			return ok;
+			// Final check
+			assert(readByte(ADDR, WHO_AM_I) == WHO_AM_I_ANSWER);
 		}
 
 		bool newData()
@@ -394,16 +392,14 @@ namespace
 			writeByte(ADDR, RESET, 0xB6);          
 		}
 		
-		bool setup()
+		void setup()
 		{
-			bool ok = true;
-
 			// Read ID
 			uint8_t c = readByte(ADDR, WHO_AM_I);
 			if (c != WHO_AM_I_ANSWER)
 			{
 				logger.println(String("Altimeter failed to identify: ") + String(c, HEX));
-				ok = false;
+				assert(false);
 			}
 
 			// Read calibration data
@@ -420,7 +416,9 @@ namespace
 			// [4:2] iir - 0:off (i hope)
 			// [0] SPI enable - 0:use_i2c
 			writeByte(ADDR, CONFIG, 0);
-			return ok;
+
+			// Final check
+			assert(readByte(ADDR, WHO_AM_I) == WHO_AM_I_ANSWER);
 		}
 
 		bool isMeasuring()
@@ -541,7 +539,7 @@ namespace
 namespace sensors
 {
 
-	bool setup(void (*isrCallback)(const SensorData&))
+	void setup(void (*isrCallback)(const SensorData&))
 	{
 		// set callback
 		::sensorDataCallback = isrCallback;
@@ -552,21 +550,16 @@ namespace sensors
 		delay(25);
 	   
 		// setup all my sensors
-		bool imu_ok = imu.setup(); // call first - sets pass-thru req for magnetometer etc
-		assert(imu_ok);
-		bool mag_ok = mag.setup();
-		assert(mag_ok);
-		bool alt_ok = alt.setup();
-		assert(alt_ok);
+		imu.setup(); // call first - sets pass-thru req for magnetometer etc
+		mag.setup();
+		alt.setup();
 
 		// perform scan
-		I2CScan();
+		// I2CScan();
 
 		// I use the MPU interrupt to drive realtime update
 		pinMode(pins::MPU_INT, INPUT);
 		attachInterrupt(pins::MPU_INT, imuIsr, RISING);
 
-		// return success
-		return imu_ok && mag_ok && alt_ok;
 	}
 }
