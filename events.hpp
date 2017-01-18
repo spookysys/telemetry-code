@@ -12,11 +12,12 @@ namespace events
 	public:
 		virtual Process& subscribe(std::function<void(unsigned long, unsigned long)>&& callback) = 0;
 		virtual Process& setPeriod(long long period) = 0;
+		
+		static Process& make(const char* name);
 	};
 
 
 
-	extern Process& makeProcess(const char* name);
 
 
 	// Due to use of templates, we need to expose some implementation detail here
@@ -43,46 +44,38 @@ namespace events
 	public:
 		Channel(const char* name) : BaseChannel(name) {}
 		
-		Channel<Params...>& subscribe(void (*callback)(unsigned long, Params...));
-		
-		Channel<Params...>& publishAt(long long time, Params... params);
-		Channel<Params...>& publishIn(long long time, Params... params);
-		Channel<Params...>& publish(Params... params);
+		template<typename CallbackType>
+		Channel<Params...>& subscribe(CallbackType callback) 
+		{
+			callbacks.push_back(callback);
+			return *this;
+		}
+
+		Channel<Params...>& publish(Params... params)
+		{
+			publishImpl(0, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
+			return *this;
+		}
+
+		Channel<Params...>& publishAt(long long time, Params... params)
+		{
+			publishImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
+			return *this;
+		}
+
+		Channel<Params...>& publishIn(long long in_time, Params... params)
+		{
+			if (in_time==0) publish(params...);
+			else publishAt(millis()+in_time, params...);
+		}
+
+
+		static Channel<Params...>& make(const char* name) 
+		{
+			return *new Channel<Params...>(name);
+		}
 	};
 
 
-	template<typename ... Params>
-	Channel<Params...>& Channel<Params...>::subscribe(void (*callback)(unsigned long, Params...))
-	{
-		callbacks.push_back(callback);
-		return *this;
-	}
-	
-	template<typename ... Params>
-	Channel<Params...>& Channel<Params...>::publishAt(long long time, Params... params)
-	{
-		publishImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
-		return *this;
-	}
-	
-	template<typename ... Params>
-	Channel<Params...>& Channel<Params...>::publishIn(long long time, Params... params)
-	{
-		publishAt(millis()+time, params...);
-	}
-
-	template<typename ... Params>
-	Channel<Params...>& Channel<Params...>::publish(Params... params)
-	{
-		publishImpl(0, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
-		return *this;
-	}
-
-
-	template<typename ... Params>
-	static Channel<Params...>& makeChannel(const char* name) 
-	{
-		return *new Channel<Params...>(name);
-	}
 
 }

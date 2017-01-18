@@ -11,7 +11,7 @@ namespace
 
 namespace common
 {
-	events::Channel<const char*>& assert_channel = events::makeChannel<const char*>("assert");
+	events::Channel<const char*>& assert_channel = events::Channel<const char*>::make("assert");
 
 	unsigned long hasAsserted()
 	{
@@ -32,7 +32,6 @@ namespace common
 
 		// log error
 		logger.println(msg);
-		logger.println();
 		logger.flush();
 
 		// Note: Gets published only after setup() finished

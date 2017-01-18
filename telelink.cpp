@@ -7,6 +7,8 @@ using namespace telelink;
 
 
 namespace {
+	Stream& logger = SerialUSB;
+
 	class GsmSerial : public HardwareSerial
 	{
 		static constexpr unsigned long fifo_depth = 1024;
@@ -46,56 +48,98 @@ namespace {
 		}
 		
 	};
-}
+
+
+
+	namespace connect {
+
+		enum State
+		{
+			INIT = 0,
+			PWRKEY_LOW = 1,
+			PWRKEY_HIGH = 2,
+			AWAIT_STATUS = 3,
+			TURNED_ON = 4
+		};
+
+		void callback(unsigned long time, State state, unsigned long timeout);
+
+		auto& connect_channel = events::Channel<State, unsigned long>::make("telelink_connect").subscribe(callback);
+
+
+		void publishIn(unsigned long in_time, State state, unsigned long timeout=0)
+		{
+			connect_channel.publishIn(in_time, state, timeout);
+		}
+
+
+		bool isOn() 
+		{
+			return digitalRead(pins::SC_STATUS);
+		}
+
+
+		void callback(unsigned long time, State state, unsigned long timeout)
+		{
+			if (state>=TURNED_ON && !isOn()) {
+				assert(!"Lost power on SimCom module");
+				publishIn(0, INIT);
+				return;
+			}
+
+			switch(state) {
+				case INIT: {
+					logger.println("INIT: Initializing PWRKEY high");
+					pinMode(pins::SC_STATUS, INPUT);
+					pinMode(pins::SC_PWRKEY, OUTPUT);
+					digitalWrite(pins::SC_PWRKEY, HIGH);
+					publishIn(500, PWRKEY_LOW);
+				} break;
+				case PWRKEY_LOW: {
+					logger.println("PWRKEY_LOW");
+					if (isOn()) {
+						logger.println("Already turned on, skipping to state TURNED_ON");
+						publishIn(0, TURNED_ON);
+					} else {
+						digitalWrite(pins::SC_PWRKEY, LOW);
+						publishIn(1000, PWRKEY_HIGH);
+					}
+				} break;
+				case PWRKEY_HIGH: {
+					logger.println("PWRKEY_HIGH");
+					digitalWrite(pins::SC_PWRKEY, HIGH);
+					publishIn(0, AWAIT_STATUS, time+2200);
+				} break;
+				case AWAIT_STATUS: {
+					if (time < timeout && !isOn()) {
+						logger.println("AWAIT_STATUS");
+						publishIn(100, AWAIT_STATUS, timeout);
+					} else {
+						publishIn(0, TURNED_ON);
+					}
+				} break;
+				case TURNED_ON: {
+					logger.println("TURNED_ON - done for now!");
+				} break;
+				default:
+					assert(!"Something went wrong!");
+					publishIn(0, INIT);
+			}
+		}
+	} // namespace connect {}
+} // namespace {}
 
 
 namespace telelink 
 {
-	bool isOn() 
-	{
-		return digitalRead(pins::SC_STATUS);
-	}
+
 
 	void setup(
 		void (*gpsPps)(), 
 		void (*gpsData)(float latitude, float longitude, float elevation)
 	)
-	{
-	
-		auto& event_turn_on = events::makeChannel<int>("telelink_turn_on");
-		auto& event_connect = events::makeChannel<int>("telelink_connect");
-
-		event_turn_on.subscribe([&](unsigned long time, int step) {
-			if (step>0 && isOn()) {
-				event_connect.publish(0);
-				return;
-			}
-			switch(step) {
-				case 0:
-					pinMode(pins::SC_PWRKEY, OUTPUT);
-					digitalWrite(pins::SC_PWRKEY, HIGH);
-					event_turn_on.publishAt(time+500, step+1);
-					break;
-				case 1:
-					digitalWrite(pins::SC_PWRKEY, LOW);
-					event_turn_on.publishAt(time+1000, step+1);
-					break;
-				case 2:
-					digitalWrite(pins::SC_PWRKEY, HIGH);
-					event_turn_on.publishAt(time+100, step+1);
-					break;
-				default:
-					assert(step>2 && step<2+22);
-					event_turn_on.publishAt(time+100, step+1);
-			}
-		});
-
-		event_connect.subscribe([&](unsigned long time, int step) {
-			switch (step) {
-				case 0:
-					break;
-			}
-		});
-
+	{	
+		logger.println("Connecting");
+		connect::publishIn(0, connect::INIT);
 	}
 }

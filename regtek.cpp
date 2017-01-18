@@ -16,7 +16,7 @@ namespace regtek
 
 	static const int num_vals = 3;
 
-	auto& plot_channel = events::makeChannel<const std::array<int32_t, num_vals>&>("plot").subscribe([&](unsigned long time, const std::array<int32_t, num_vals>& v){
+	auto& plot_channel = events::Channel<const std::array<int32_t, num_vals>&>::make("plot").subscribe([&](unsigned long time, const std::array<int32_t, num_vals>& v){
 		for (auto& iter : v) {
 			logger.print( iter * (1.f/float(1<<8)) );
 			logger.print("\t");
@@ -42,9 +42,11 @@ namespace regtek
 			//plot_channel.publish(state);
 		}
 
+		/*
 		if (data.mag_valid) {
 			plot_channel.publish(data.mag_data);
 		}
+		*/
 	}
 
 }

@@ -63,8 +63,10 @@ namespace logging
 
 	class Logger : public LoggerArray
 	{
+	public:
+
+		static Logger& make(const char* name, Level baseLevel);
 	};
 
-	Logger& makeLogger(const char* name, Level baseLevel);
 }
 

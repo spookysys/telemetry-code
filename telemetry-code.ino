@@ -34,7 +34,7 @@ namespace {
 	}
 
 
-	events::Process& blink_process = events::makeProcess("blink").subscribe([&](unsigned long time, unsigned long delta) {
+	events::Process& blink_process = events::Process::make("blink").subscribe([&](unsigned long time, unsigned long delta) {
 		static bool val = false;
 		pinMode(pins::LED, OUTPUT);
 		digitalWrite(pins::LED, val);    
@@ -43,7 +43,7 @@ namespace {
 
 
 
-	events::Process& stats_process = events::makeProcess("stats").subscribe([&](unsigned long time, unsigned long delta) {
+	events::Process& stats_process = events::Process::make("stats").subscribe([&](unsigned long time, unsigned long delta) {
 		//logger.println(String() + "Free RAM: " + freeRam() + ", Voltage: " + readBatteryVoltage());
 	}).setPeriod(10000);
 }
@@ -73,7 +73,6 @@ void setup() {
 	// Init modules
 	sensors::setup(regtek::sensorUpdate);
 	telelink::setup(nullptr, nullptr);
-
 	
 	// Indicate correct or errorenous operation by blinking
 	common::assert_channel.subscribe([&](unsigned long time, const char* msg) {

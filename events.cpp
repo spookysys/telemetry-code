@@ -77,7 +77,7 @@ namespace events
 		}
 	};
 
-	Process& makeProcess(const char* name)
+	Process& Process::make(const char* name)
 	{
 		return *new ProcessImpl(name);
 	}
@@ -126,15 +126,18 @@ namespace events
 		
 		// compact the list, removing invalid events
 		{
+			int num_valid = 0;
+			for (const auto& iter : channel_events()) if (iter.valid) num_valid++;
 			auto r = channel_events().begin();
 			auto w = channel_events().begin();
 			while (1) {
 				while (r!=channel_events().end() && !r->valid) r++;
 				if (r==channel_events().end()) break;
-				w++ = r++;
+				*w++ = *r++;
 			}
 			channel_events().resize(w-channel_events().begin());
-			for (auto& iter : channel_events()) assert(iter.valid);
+			for (const auto& iter : channel_events()) assert(iter.valid);
+			assert(channel_events().size()==num_valid);
 		}
 
 		// Continue interrupts for channel selection

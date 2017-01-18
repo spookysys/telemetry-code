@@ -9,6 +9,5 @@ namespace telelink
 		void (*gpsData)(float latitude, float longitude, float elevation)
 	);
 
-	bool isOn();
 
 }
