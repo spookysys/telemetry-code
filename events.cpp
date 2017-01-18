@@ -84,7 +84,7 @@ namespace events
 
 
 	// Due to use of templates, we need to expose some implementation detail here
-	void BaseChannel::publishImpl(unsigned long time, function<void(unsigned long)> cbCaller)
+	void BaseChannel::postImpl(unsigned long time, function<void(unsigned long)> cbCaller)
 	{
 		ChannelEvent value = {true, this, time, cbCaller};
 		noInterrupts();

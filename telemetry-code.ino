@@ -62,13 +62,14 @@ void setup() {
 	
 	// Init serial
 	SerialUSB.begin(9600);
-	int last_i=0;
-	for (int i=0; i<200 && !SerialUSB; i++) {
+	for (int i=0; i<200; i++) {
 		delay(100);
-		last_i = i*100;
 		watchdog::tickle();
+		if (SerialUSB) {
+			SerialUSB.println(String("Serial connected at ") + i*100 + " millis");
+			break;
+		}
 	}
-	SerialUSB.println(String("Yo! ") + last_i);
 		
 	// Init modules
 	sensors::setup(regtek::sensorUpdate);

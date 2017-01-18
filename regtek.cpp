@@ -39,12 +39,12 @@ namespace regtek
 			state[1] = (state[1] + (360<<16)) % (360<<16);
 			state[2] = (state[2] + (360<<16)) % (360<<16);
 
-			//plot_channel.publish(state);
+			//plot_channel.post(state);
 		}
 
 		/*
 		if (data.mag_valid) {
-			plot_channel.publish(data.mag_data);
+			plot_channel.post(data.mag_data);
 		}
 		*/
 	}

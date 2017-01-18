@@ -24,7 +24,7 @@ namespace events
 	class BaseChannel {
 	protected:
 		const char* name;
-		void publishImpl(unsigned long time, std::function<void(unsigned long)> cbCaller);
+		void postImpl(unsigned long time, std::function<void(unsigned long)> cbCaller);
 	public:
 		BaseChannel(const char* name);
 		virtual ~BaseChannel();
@@ -51,22 +51,22 @@ namespace events
 			return *this;
 		}
 
-		Channel<Params...>& publish(Params... params)
+		Channel<Params...>& post(Params... params)
 		{
-			publishImpl(0, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
+			postImpl(0, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
 			return *this;
 		}
 
-		Channel<Params...>& publishAt(long long time, Params... params)
+		Channel<Params...>& postAt(long long time, Params... params)
 		{
-			publishImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
+			postImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
 			return *this;
 		}
 
-		Channel<Params...>& publishIn(long long in_time, Params... params)
+		Channel<Params...>& postIn(long long in_time, Params... params)
 		{
-			if (in_time==0) publish(params...);
-			else publishAt(millis()+in_time, params...);
+			if (in_time==0) post(params...);
+			else postAt(millis()+in_time, params...);
 		}
 
 

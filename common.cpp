@@ -34,8 +34,8 @@ namespace common
 		logger.println(msg);
 		logger.flush();
 
-		// Note: Gets published only after setup() finished
-		assert_channel.publish(msg.c_str());
+		// Note: Gets posted only after setup() finished
+		assert_channel.post(msg.c_str());
 	}  
 }
 // hack for basic STL

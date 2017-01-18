@@ -67,9 +67,9 @@ namespace {
 		auto& connect_channel = events::Channel<State, unsigned long>::make("telelink_connect").subscribe(callback);
 
 
-		void publishIn(unsigned long in_time, State state, unsigned long timeout=0)
+		void postIn(unsigned long in_time, State state, unsigned long timeout=0)
 		{
-			connect_channel.publishIn(in_time, state, timeout);
+			connect_channel.postIn(in_time, state, timeout);
 		}
 
 
@@ -83,7 +83,7 @@ namespace {
 		{
 			if (state>=TURNED_ON && !isOn()) {
 				assert(!"Lost power on SimCom module");
-				publishIn(0, INIT);
+				postIn(0, INIT);
 				return;
 			}
 
@@ -93,29 +93,29 @@ namespace {
 					pinMode(pins::SC_STATUS, INPUT);
 					pinMode(pins::SC_PWRKEY, OUTPUT);
 					digitalWrite(pins::SC_PWRKEY, HIGH);
-					publishIn(500, PWRKEY_LOW);
+					postIn(500, PWRKEY_LOW);
 				} break;
 				case PWRKEY_LOW: {
 					logger.println("PWRKEY_LOW");
 					if (isOn()) {
 						logger.println("Already turned on, skipping to state TURNED_ON");
-						publishIn(0, TURNED_ON);
+						postIn(0, TURNED_ON);
 					} else {
 						digitalWrite(pins::SC_PWRKEY, LOW);
-						publishIn(1000, PWRKEY_HIGH);
+						postIn(1000, PWRKEY_HIGH);
 					}
 				} break;
 				case PWRKEY_HIGH: {
 					logger.println("PWRKEY_HIGH");
 					digitalWrite(pins::SC_PWRKEY, HIGH);
-					publishIn(0, AWAIT_STATUS, time+2200);
+					postIn(0, AWAIT_STATUS, time+2200);
 				} break;
 				case AWAIT_STATUS: {
 					if (time < timeout && !isOn()) {
 						logger.println("AWAIT_STATUS");
-						publishIn(100, AWAIT_STATUS, timeout);
+						postIn(100, AWAIT_STATUS, timeout);
 					} else {
-						publishIn(0, TURNED_ON);
+						postIn(0, TURNED_ON);
 					}
 				} break;
 				case TURNED_ON: {
@@ -123,7 +123,7 @@ namespace {
 				} break;
 				default:
 					assert(!"Something went wrong!");
-					publishIn(0, INIT);
+					postIn(0, INIT);
 			}
 		}
 	} // namespace connect {}
@@ -140,6 +140,6 @@ namespace telelink
 	)
 	{	
 		logger.println("Connecting");
-		connect::publishIn(0, connect::INIT);
+		connect::postIn(0, connect::INIT);
 	}
 }
