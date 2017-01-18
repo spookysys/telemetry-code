@@ -292,10 +292,12 @@ namespace
 		// adjust_x[1] = int(adjust[1]) + 128;
 		// adjust_x[2] = int(adjust[2]) + 128;
 		std::array<uint8_t, 3> adjust;
-
+		bool apply_factory_calibration = false;
 	public:
-		void setup()
+		void setup(bool apply_factory_calibration)
 		{
+			this->apply_factory_calibration = apply_factory_calibration;
+
 			uint8_t c = readByte(ADDR, WHO_AM_I);
 			if (c != WHO_AM_I_ANSWER)
 			{
@@ -303,9 +305,30 @@ namespace
 				assert(false);
 			}
 
-			// Power down magnetometer
-			writeByte(ADDR, CNTL, 0x00);          
+			// First extract the factory calibration for each magnetometer axis
+			writeByte(ADDR, CNTL, 0x00); // Power down magnetometer
 			delay(10);
+			writeByte(ADDR, CNTL, 0x0F); // Enter Fuse ROM access mode
+			delay(10);
+			readBytes(ADDR, ASAX, 3, &adjust[0]); // Read the x-, y-, and z-axis calibration values
+			writeByte(ADDR, CNTL, 0x00);          // Power down magnetometer
+			delay(10);
+			if (apply_factory_calibration) {
+				float scale[3];
+				for (int i=0; i<3; i++)
+					scale[i] = (int(adjust[i]) + 128) * (1.f / 256);
+				logger.println("Magnetometer scales from factory:");
+				logger.print("[");
+				for (int i=0; i<3; i++)
+					logger.print(String() + " " + scale[i] + " ");
+				logger.println("]");
+				float normalize = pow(scale[0] * scale[1] * scale[2], 1.f/3.f);
+				logger.println("Normalized:");
+				logger.print("[");
+				for (int i=0; i<3; i++)
+					logger.print(String() + " " + scale[i]/normalize + " ");
+				logger.println("]");
+			}
 
 			// Configure the magnetometer for continuous read and highest resolution
 			// set Mscale bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL register,
@@ -317,7 +340,7 @@ namespace
 			assert(readByte(ADDR, WHO_AM_I) == WHO_AM_I_ANSWER);
 		}
 
-		bool newData()
+		bool hasNewData()
 		{
 			return readByte(ADDR, ST1) & 0x01;
 		}
@@ -325,7 +348,7 @@ namespace
 		bool read(std::array<int32_t, 3> &res, bool &overflow)
 		{
 			// return false if no new data
-			if (!newData()) return false;
+			if (!hasNewData()) return false;
 
 			// read out values
 			std::array<uint8_t, 7> raw;
@@ -336,7 +359,14 @@ namespace
 			tmp[0] = int16_t((uint16_t(raw[1]) << 8) | raw[0]); // Turn the MSB and LSB into a signed 16-bit value
 			tmp[1] = int16_t((uint16_t(raw[3]) << 8) | raw[2]); // Data stored as little Endian
 			tmp[2] = int16_t((uint16_t(raw[5]) << 8) | raw[4]);
-		   
+
+			// scale by factory-provided values (see MPU-9250 Register Map under "Sensitivity Adjustment")
+			if (apply_factory_calibration) {
+				tmp[0] *= int(adjust[0]) + 128;
+				tmp[1] *= int(adjust[1]) + 128;
+				tmp[2] *= int(adjust[2]) + 128;
+			}
+			
 			// flip axes to match gyro/accel (see MPU-9250 Product Specification under "Orientation of Axes")
 			std::swap(tmp[0], tmp[1]);
 			tmp[2] = -tmp[2];
@@ -551,7 +581,7 @@ namespace sensors
 	   
 		// setup all my sensors
 		imu.setup(); // call first - sets pass-thru req for magnetometer etc
-		mag.setup();
+		mag.setup(true);
 		alt.setup();
 
 		// perform scan
