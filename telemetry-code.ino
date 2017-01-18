@@ -1,7 +1,7 @@
 #include "common.hpp"
 #include "pins.hpp"
 #include "sensors.hpp"
-#include "modem.hpp"
+#include "telelink.hpp"
 #include "events.hpp"
 #include "regtek.hpp"
 #include "watchdog.hpp"
@@ -72,7 +72,7 @@ void setup() {
 		
 	// Init modules
 	sensors::setup(regtek::sensorUpdate);
-	modem::setup(nullptr, nullptr);
+	telelink::setup(nullptr, nullptr);
 
 	
 	// Indicate correct or errorenous operation by blinking

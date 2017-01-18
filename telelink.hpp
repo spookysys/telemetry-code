@@ -1,8 +1,8 @@
 #pragma once
 #include "common.hpp"
 
-// Note: this modem has built-in gps!
-namespace modem 
+// Note: this telelink has built-in gps!
+namespace telelink 
 {
 	void setup(
 		void (*gpsPps)(), 
