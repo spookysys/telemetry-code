@@ -9,9 +9,9 @@ using namespace telelink;
 namespace {
 	Stream& logger = SerialUSB;
 
-	class GsmSerial : public HardwareSerial
+	class GsmSerial
 	{
-		static constexpr unsigned long fifo_depth = 1024;
+		static constexpr unsigned long fifo_depth = 1024; // must be pow-2
 		static constexpr unsigned long baudrate = 19200;
 		static constexpr uint8_t pin_rx = 3;  /*PA09 SERCOM2.1 RX<-GSM_TX*/
 		static constexpr uint8_t pin_tx = 4;  /*PA08 SERCOM2.0 TX->GSM_RX*/
@@ -28,8 +28,8 @@ namespace {
 		std::array<char, fifo_depth> rx_fifo;
 		int rx_push_idx = 0;
 		int rx_pop_idx = 0;
-		bool rx_full = false;
-	
+		volatile bool rx_full = false;
+		volatile uint16_t num_newlines = 0;
 	public:
 
 		void begin()
@@ -47,7 +47,76 @@ namespace {
 			digitalWrite(pin_rts, 0);
 		}
 		
-	};
+		void irqHandler()
+		{
+			while (sercom->availableDataUART()) {
+				char x = sercom->readDataUART();
+				if (!rx_full) {
+					rx_fifo[rx_push_idx] = x;
+					rx_push_idx = (rx_push_idx + 1) & (fifo_depth - 1);
+					if (rx_push_idx == fifo_depth) rx_push_idx = 0;
+					rx_full = (rx_push_idx == rx_pop_idx);
+					if (x=='\n') num_newlines++;
+				}
+			}
+			
+			if (sercom->isUARTError()) {
+				assert(!"gsm rx uart error");
+				sercom->acknowledgeUARTError();
+				sercom->clearStatusUART();
+			}
+		}
+
+		bool hasLine() 
+		{
+			return num_newlines > 0;
+		}
+
+		String popLine()
+		{
+			if (!hasLine()) {
+				assert(0);
+				return String();
+			}
+			noInterrupts();
+
+			// Remove string from fifo and find start/stop
+			int start_idx = rx_pop_idx;
+			while (rx_fifo[rx_pop_idx] != '\n' && rx_fifo[rx_pop_idx] != '\r') {
+				rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
+			}
+			int stop_idx = rx_pop_idx;
+
+			// Calculate length of string
+			int length = (stop_idx - start_idx) & (fifo_depth - 1);
+			if (rx_full) length = fifo_depth;
+			
+			// Copy and condition string to stack
+			std::array<char, fifo_depth+1> buff;
+			buff[length] = 0;
+			if (start_idx < stop_idx) {
+				memcpy(buff.data(), rx_fifo.data()+start_idx, length);
+			} else if (length) {
+				memcpy(buff.data(), rx_fifo.data()+start_idx, fifo_depth-start_idx);
+				memcpy(buff.data()+fifo_depth-start_idx, rx_fifo.data(), stop_idx);
+			}
+			
+			// Skip end-of-line-markers and finish up
+			if (rx_fifo[rx_pop_idx] == '\r') {
+				rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
+			}
+			if (rx_fifo[rx_pop_idx] == '\n') {
+				rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
+				num_newlines--;
+			} else {
+				assert(0);
+			}
+			rx_full = false;
+			interrupts();
+			return String(buff.data());
+		}
+
+	} gsm_serial;
 
 
 
@@ -119,7 +188,8 @@ namespace {
 					}
 				} break;
 				case TURNED_ON: {
-					logger.println("TURNED_ON - done for now!");
+					logger.println("TURNED_ON - good to go!");
+					gsm_serial.begin();
 				} break;
 				default:
 					assert(!"Something went wrong!");
@@ -128,6 +198,13 @@ namespace {
 		}
 	} // namespace connect {}
 } // namespace {}
+
+
+void SERCOM2_Handler()
+{
+	gsm_serial.irqHandler();
+}
+
 
 
 namespace telelink 
