@@ -7,11 +7,10 @@ namespace logging
 
 	enum Level
 	{
-		ALERT=1,  // Primary information, should be read by operator
-		INFO=2,   // Status information, might be read by operator
-		LOG=3,    // Suitable for human consumption at a later date
-		WEB=4,    // Too fast for human, slow enough for internet
-		FLASH=5,  // Too fast for internet, store on flash
+		ALERT=1,    // Priority information, should be read by operator
+		HUMAN=2,    // Suitable for human consumption (low bandwidth)
+		SERVER=3,   // Send to server over TCP (medium bandwidth)
+		REALTIME=4  // Too fast for internet, store on flash (maybe send over UDP) (high bandwidth)
 	};
 
 	struct LoggerCommon

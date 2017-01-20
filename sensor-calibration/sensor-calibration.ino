@@ -112,8 +112,8 @@ void setup()
 	wireKhz(400);
 
 	// Init serial
-	SerialUSB.begin(9600);
-	for (int i = 0; !SerialUSB; i++)
+	Serial.begin(9600);
+	for (int i = 0; !Serial; i++)
 		delay(100);
 
 	Serial.println("Please select what to calibrate");

@@ -7,7 +7,7 @@ using namespace std;
 
 namespace regtek
 {
-	Stream& logger = SerialUSB;
+	Stream& logger = Serial;
 
 
 	float GyroMeasError = PI * (4.0f / 180.0f);   // gyroscope measurement error in rads/s (start at 40 deg/s)
