@@ -25,7 +25,7 @@ namespace {
 		class Serial
 		{
 			static constexpr unsigned long fifo_depth = 1024; // must be pow-2
-			static constexpr unsigned long baudrate = 19200;
+			static constexpr unsigned long baudrate = 9600;//19200;
 			static constexpr uint8_t pin_rx = 3;  /*PA09 SERCOM2.1 RX<-GSM_TX*/
 			static constexpr uint8_t pin_tx = 4;  /*PA08 SERCOM2.0 TX->GSM_RX*/
 			static constexpr uint8_t pin_rts = 2; /*PA14 SERCOM2.2 RTS*/
@@ -139,9 +139,9 @@ namespace {
 
 			void waitForDataRegister()
 			{
-				for (int i=0; i<10; i++) {
+				for (int i=0; i<100; i++) {
+					delay(1);
 					if (sercom->isDataRegisterEmptyUART()) return;
-					delay(10);
 				}
 				assert(!"isDataRegisterEmptyUART stuck at high");
 			}
@@ -166,6 +166,7 @@ namespace {
 
 		} serial;
 
+		
 
 		// current state
 		enum State 
@@ -175,57 +176,90 @@ namespace {
 			CONNECT_1,
 			CONNECT_2,
 			CONNECT_3,
-			YOLO
+			CONNECT_4,
+			OFFLINE,
+			ONLINE
 		};
 		State state = CLOSED;
 
+		void setState(State new_state)
+		{
+			logger.println(String("GSM state ") + state + "->" + new_state);
+			state = new_state;
+		}
+
+		void sendCommand(const char* command, State new_state, unsigned long timeout=10000)
+		{
+			logger.println(String("GSM state ") + state + "->" + new_state + ": " + command);
+			state = new_state;
+			static auto command_chan = events::Channel<const char*>::make("gsm_command").subscribe([&](unsigned long time, const char* command) {
+				serial.println(command);
+			});
+			command_chan.post(command);
+		}
+
 		void callback(unsigned long time, const String& line)
 		{
+			// +CGREG: online/offline
+			if (line.startsWith("+CGREG:")) {
+				int status = String(line[line.length()-1]).toInt();
+				logger.println(String("Network status: ") + status);
+				if (state<ONLINE && (status==1 || status==5)) {
+					setState(ONLINE);
+				} else if (state==ONLINE && (status==0 || status==2)) {
+					setState(OFFLINE);
+				} else assert(!"Unexpected network status");
+				return;
+			}
+
+			// Signal strength
+			if (line.startsWith("+CSQ:")) {
+				int signal_strength = line.substring(6, line.indexOf(',')).toInt();
+				logger.println(String("Signal strength: ") + signal_strength);
+			}
+
+			// ERROR? Reboot
+			//if (line=="ERROR") {
+				//sendCommand("AT+CPOWD=0", CLOSED);
+			//}
+
 			switch (state) {
 				case CLOSED: {
+					logger.println("CLOSED");
 				} break;
 				case SYNCING: {
-					if (line=="OK") {
-						state = CONNECT_1;
-						serial.println("AT+IFC=2,2;+CGREG=1");
-					}
+					if (line=="OK")	sendCommand("AT+IFC=2,2;+CGREG=1", CONNECT_1);
 				} break;
 				case CONNECT_1: {
-					if (line=="OK") {
-						state = CONNECT_2;
-						serial.println("AT+CSQ;+SAPBR=2,1");
-					}
+					if (line=="OK") sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
 				} break;
 				case CONNECT_2: {
-					static int signal_strength = 0;
 					static bool has_bearer_profile = false;
-					if (line.startsWith("+CSQ:")) {
-						signal_strength = line.substring(6, line.indexOf(',')).toInt();
-						logger.println(String("signal_strength: ") + signal_strength);
-					} else if (line.startsWith("+SAPBR:")) {
+					if (line.startsWith("+SAPBR:")) {
 						std::array<String, 2> toks;
 						misc::tokenize(line, toks);
 						has_bearer_profile = toks[1]=="1";
 						logger.println(String("has_bearer_profile: ") + has_bearer_profile);
 					} else if (line=="OK") {
-						if (!has_bearer_profile) {
-							serial.println("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1");
-							state = CONNECT_3;
+						if (has_bearer_profile) {
+							sendCommand("AT+CGREG?", OFFLINE);
 						} else {
-							state = YOLO;
+							sendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", CONNECT_3);
 						}
 					}
 				} break;
 				case CONNECT_3: {
-					logger.println("Connect_3");
-					state = YOLO;
+					if (line=="OK") sendCommand("AT+CGREG?", OFFLINE);
 				} break;
-				case YOLO: {
-					logger.println("GSM-YOLO");
+				case OFFLINE: {
+					logger.println("OFFLINE");
+				} break;
+				case ONLINE: {
+					logger.println("ONLINE");
 				} break;
 				default: {
 					assert(!"Message received on gsm-rx while in an invalid state!");
-					state = CONNECT_1;
+					setState(CONNECT_1);
 				}
 			}
 		}
@@ -245,7 +279,7 @@ namespace {
 			});
 			at_chan.subscribe([&](unsigned long time){
 				if (state==SYNCING) {
-					serial.println("AT");
+					sendCommand("AT", SYNCING);
 					at_chan.postAt(time+200);
 				}
 			});
@@ -254,7 +288,7 @@ namespace {
 		void begin()
 		{
 			serial.begin();
-			state = SYNCING;
+			sendCommand("AT", SYNCING);
 			at_chan.post();
 		}
 

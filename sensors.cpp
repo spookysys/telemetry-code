@@ -313,6 +313,7 @@ namespace
 			readBytes(ADDR, ASAX, 3, &adjust[0]); // Read the x-, y-, and z-axis calibration values
 			writeByte(ADDR, CNTL, 0x00);          // Power down magnetometer
 			delay(10);
+			/*
 			if (apply_factory_calibration) {
 				float scale[3];
 				for (int i=0; i<3; i++)
@@ -329,6 +330,7 @@ namespace
 					logger.print(String() + " " + scale[i]/normalize + " ");
 				logger.println("]");
 			}
+			*/
 
 			// Configure the magnetometer for continuous read and highest resolution
 			// set Mscale bit 4 to 1 (0) to enable 16 (14) bit resolution in CNTL register,
