@@ -11,7 +11,7 @@ namespace events
 	{
 	public:
 		virtual Process& subscribe(std::function<void(unsigned long, unsigned long)>&& callback) = 0;
-		virtual Process& setPeriod(unsigned long period) = 0;
+		virtual Process& setPeriod(long long period) = 0;
 		
 		static Process& make(const char* name);
 	};
@@ -57,13 +57,13 @@ namespace events
 			return *this;
 		}
 
-		Channel<Params...>& postAt(unsigned long time, Params... params)
+		Channel<Params...>& postAt(long long time, Params... params)
 		{
 			postImpl(time, std::bind(&Channel::callCallbacks, this, std::placeholders::_1, params...));
 			return *this;
 		}
 
-		Channel<Params...>& postIn(unsigned long in_time, Params... params)
+		Channel<Params...>& postIn(long long in_time, Params... params)
 		{
 			if (in_time==0) post(params...);
 			else postAt(millis()+in_time, params...);
