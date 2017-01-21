@@ -34,14 +34,14 @@ namespace events
 
 	class ProcessImpl : public Process
 	{
-		const char* name;
+		String name;
 		vector<function<void(unsigned long, unsigned long)>> callbacks;
 		unsigned long period = 0;
 		unsigned long times_run = 0;
 		unsigned long time_spent = 0;
 		unsigned long last_start_time = 0;
 	public:
-		ProcessImpl(const char* name) : name(name) 
+		ProcessImpl(const String& name) : name(name) 
 		{
 			processes().push_back(this);
 		}
@@ -77,7 +77,7 @@ namespace events
 		}
 	};
 
-	Process& Process::make(const char* name)
+	Process& Process::make(const String& name)
 	{
 		auto tmp = new ProcessImpl(name);
 		return *tmp;
@@ -93,7 +93,7 @@ namespace events
 		interrupts();
 	}
 
-	BaseChannel::BaseChannel(const char* name) : name(name)
+	BaseChannel::BaseChannel(const String& name) : name(name)
 	{
 	}
 	

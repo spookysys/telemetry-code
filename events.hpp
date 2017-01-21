@@ -13,7 +13,7 @@ namespace events
 		virtual Process& subscribe(std::function<void(unsigned long, unsigned long)>&& callback) = 0;
 		virtual Process& setPeriod(unsigned long period) = 0;
 		
-		static Process& make(const char* name);
+		static Process& make(const String& name);
 	};
 
 
@@ -23,10 +23,10 @@ namespace events
 	// Due to use of templates, we need to expose some implementation detail here
 	class BaseChannel {
 	protected:
-		const char* name;
+		String name;
 		void postImpl(unsigned long time, std::function<void(unsigned long)> cbCaller);
 	public:
-		BaseChannel(const char* name);
+		BaseChannel(const String& name);
 		virtual ~BaseChannel();
 	};
 	
@@ -42,7 +42,7 @@ namespace events
 		}
 		
 	public:
-		Channel(const char* name) : BaseChannel(name) {}
+		Channel(const String& name) : BaseChannel(name) {}
 		
 		template<typename CallbackType>
 		Channel<Params...>& subscribe(CallbackType callback) 
@@ -70,7 +70,7 @@ namespace events
 		}
 
 
-		static Channel<Params...>& make(const char* name) 
+		static Channel<Params...>& make(const String& name) 
 		{
 			return *new Channel<Params...>(name);
 		}

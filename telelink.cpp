@@ -1,6 +1,7 @@
 #include "telelink.hpp"
 #include "events.hpp"
 #include "pins.hpp"
+#include "CharFifo.hpp"
 #include "wiring_private.h" // pinPeripheral() function
 
 using namespace telelink;
@@ -17,9 +18,6 @@ namespace {
 
 	// Logic for communicating over gsm
 	namespace gsm {
-
-		// Subscribe for a notification when num_newlines goes from 0 to 1
-		auto& rx_chan = events::Channel<>::make("gsm_rx");
 
 		// GSM Serial Link
 		class Serial
@@ -38,31 +36,22 @@ namespace {
 			static constexpr SercomUartTXPad pad_tx = UART_TX_PAD_0;
 			static constexpr SERCOM* sercom = &sercom2;
 
-			std::array<char, fifo_depth> rx_fifo;
-			int rx_push_idx = 0;
-			int rx_pop_idx = 0;
-			volatile bool rx_full = false;
-			volatile uint16_t num_newlines = 0;
+			CharFifo<fifo_depth, true> rx_fifo;
 
-			void dump()
+			void waitForDataRegister()
 			{
-				logger.println("Fifo Dump");
-				logger.println(String() + "num_newlines: " + num_newlines);
-				bool go=rx_full;
-				for (int i=rx_pop_idx; i!=rx_push_idx || go; i=(i+1)&(fifo_depth-1), go=false) {
-					if (isprint(rx_fifo[i])) logger.write(rx_fifo[i]);
-					else logger.print(String("\\") + String(rx_fifo[rx_push_idx], HEX) + String("\\"));
+				for (int i=0; i<100; i++) {
+					delay(1);
+					if (sercom->isDataRegisterEmptyUART()) return;
 				}
-				logger.println();
+				assert(!"isDataRegisterEmptyUART stuck at high");
 			}
 
 		public:
 
-			Serial() {
-				auto& tmp = events::Process::make("gsm_serial_dump");
-				tmp.subscribe([this](unsigned long time, unsigned long delta) {
-					dump();
-				}).setPeriod(10000);
+			Serial() : rx_fifo("gsm_rx")
+			{
+				rx_fifo.startDumping(10000);
 			}
 
 			// Open the link
@@ -81,19 +70,17 @@ namespace {
 				digitalWrite(pin_rts, 0);
 			}
 			
+			events::Channel<>& rxLineChan()
+			{
+				return rx_fifo.getLineChan();
+			}
+
 			// Handle bytes on the rx
 			void irqHandler()
 			{
 				while (sercom->availableDataUART()) {
 					char x = sercom->readDataUART();
-					if (!rx_full) {
-						rx_fifo[rx_push_idx] = x;
-						rx_push_idx = (rx_push_idx + 1) & (fifo_depth - 1);
-						if (rx_push_idx == fifo_depth) rx_push_idx = 0;
-						rx_full = (rx_push_idx == rx_pop_idx);
-						if (x=='\n' && num_newlines==0) rx_chan.post();
-						if (x=='\n') num_newlines++;
-					}
+					rx_fifo.push(x);
 				}
 				
 				if (sercom->isUARTError()) {
@@ -105,65 +92,12 @@ namespace {
 
 			bool hasLine() 
 			{
-				return num_newlines > 0;
+				return rx_fifo.hasLine();
 			}
 
 			String popLine()
 			{
-				if (!hasLine()) {
-					assert(0);
-					return String();
-				}
-
-				// Interrupts off
-				noInterrupts();
-
-				// Remove string from fifo and find start/stop
-				int start_idx = rx_pop_idx;
-				while (rx_fifo[rx_pop_idx] != '\n' && rx_fifo[rx_pop_idx] != '\r') {
-					rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
-				}
-				int stop_idx = rx_pop_idx;
-
-				// Calculate length of string
-				int length = (stop_idx - start_idx) & (fifo_depth - 1);
-				if (rx_full) length = fifo_depth;
-				
-				// Copy and condition string to stack
-				std::array<char, fifo_depth+1> buff;
-				buff[length] = 0;
-				if (start_idx < stop_idx) {
-					memcpy(buff.data(), rx_fifo.data()+start_idx, length);
-				} else if (length) {
-					memcpy(buff.data(), rx_fifo.data()+start_idx, fifo_depth-start_idx);
-					memcpy(buff.data()+fifo_depth-start_idx, rx_fifo.data(), stop_idx);
-				}
-				
-				// Skip end-of-line-markers and decrement num_newlines
-				if (rx_fifo[rx_pop_idx] == '\r') {
-					rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
-				}
-				if (rx_fifo[rx_pop_idx] == '\n') {
-					rx_pop_idx = (rx_pop_idx + 1) & (fifo_depth - 1);
-					num_newlines--;
-				} else assert(0);
-
-				// fifo no longer full (if it was)
-				if (rx_pop_idx != start_idx) rx_full = false;
-				else assert(0);
-
-				// Interrupts back on and return
-				interrupts();
-				return String(buff.data());
-			}
-
-			void waitForDataRegister()
-			{
-				for (int i=0; i<100; i++) {
-					delay(1);
-					if (sercom->isDataRegisterEmptyUART()) return;
-				}
-				assert(!"isDataRegisterEmptyUART stuck at high");
+				return rx_fifo.popLine();
 			}
 
 			void println(const char* x=nullptr)
@@ -334,7 +268,7 @@ namespace {
 		// called once at init
 		void setup()
 		{
-			rx_chan.subscribe([&](unsigned long time) {
+			serial.rxLineChan().subscribe([&](unsigned long time) {
 				while (serial.hasLine()) {
 					auto tmp = serial.popLine();
 					logger.println(String("gsm_rx>") + tmp);
