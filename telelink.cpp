@@ -43,7 +43,27 @@ namespace {
 			int rx_pop_idx = 0;
 			volatile bool rx_full = false;
 			volatile uint16_t num_newlines = 0;
+
+			void dump()
+			{
+				logger.println("Fifo Dump");
+				logger.println(String() + "num_newlines: " + num_newlines);
+				bool go=rx_full;
+				for (int i=rx_pop_idx; i!=rx_push_idx || go; i=(i+1)&(fifo_depth-1), go=false) {
+					logger.print(String("\\") + String(rx_fifo[i], HEX) + "'" + String(rx_fifo[i]) + "' ");
+				}
+				logger.print(String("\\") + String(rx_fifo[rx_push_idx], HEX) + "'" + String(rx_fifo[rx_push_idx]) + "' ");
+				logger.println();
+			}
+
 		public:
+
+			Serial() {
+				auto& tmp = events::Process::make("gsm_serial_dump");
+				tmp.subscribe([this](unsigned long time, unsigned long delta) {
+					dump();
+				}).setPeriod(10000);
+			}
 
 			// Open the link
 			void begin()
@@ -172,44 +192,62 @@ namespace {
 		enum State 
 		{
 			CLOSED = 0,
-			SYNCING,
+			SYNCING_1,
+			SYNCING_2,
 			CONNECT_1,
 			CONNECT_2,
 			CONNECT_3,
 			CONNECT_4,
-			OFFLINE,
-			ONLINE
+			IDLE,
+			IGNORE
 		};
 		State state = CLOSED;
+		bool online = false;
+
+		static const unsigned long command_delay = 2000;
+
 
 		void setState(State new_state)
 		{
-			logger.println(String("GSM state ") + state + "->" + new_state);
-			state = new_state;
+			static auto chan = events::Channel<State>::make("gsm_state").subscribe([&](unsigned long time, State new_state) {
+				logger.println(String(new_state));
+				state = new_state;
+			});
+			chan.postIn(command_delay, new_state);
+			state = IGNORE;
+			logger.println("[]");
 		}
 
 		void sendCommand(const char* command, State new_state, unsigned long timeout=10000)
 		{
-			logger.println(String("GSM state ") + state + "->" + new_state + ": " + command);
-			state = new_state;
-			static auto command_chan = events::Channel<const char*>::make("gsm_command").subscribe([&](unsigned long time, const char* command) {
+			static auto chan = events::Channel<const char*, State>::make("gsm_command").subscribe([&](unsigned long time, const char* command, State new_state) {
+				logger.println(String(new_state));
+				state = new_state;
 				serial.println(command);
 			});
-			command_chan.post(command);
+			chan.postIn(command_delay, command, new_state);
+			state = IGNORE;
+			logger.println("[]");
 		}
+
 
 		void callback(unsigned long time, const String& line)
 		{
-			// +CGREG: online/offline
+			// online/offline
 			if (line.startsWith("+CGREG:")) {
+				// Interpret status
 				int status = String(line[line.length()-1]).toInt();
-				logger.println(String("Network status: ") + status);
-				if (state<ONLINE && (status==1 || status==5)) {
-					setState(ONLINE);
-				} else if (state==ONLINE && (status==0 || status==2)) {
-					setState(OFFLINE);
+				if (status==1 || status==5) {
+					online = true;
+					logger.println("Going online!");
+				} else if (status==0 || status==2) {
+					online = false;
+					logger.println("Going offline!");
 				} else assert(!"Unexpected network status");
-				return;
+
+				// Unsolicited? return!
+				if (line.length() == 9) return;
+				else assert(line.length()==11);
 			}
 
 			// Signal strength
@@ -219,19 +257,29 @@ namespace {
 			}
 
 			// ERROR? Reboot
-			//if (line=="ERROR") {
+			if (line=="ERROR") {
 				//sendCommand("AT+CPOWD=0", CLOSED);
-			//}
+				logger.println("Restarting SIM868 module");
+				sendCommand("AT+CFUN=1,1", SYNCING_1);
+				return;
+			}
 
+			static int response_counter = 0;
 			switch (state) {
 				case CLOSED: {
 					logger.println("CLOSED");
 				} break;
-				case SYNCING: {
+				case SYNCING_1: {
+					if (line=="OK")	sendCommand("AT", SYNCING_2);
+				} break;
+				case SYNCING_2: {
 					if (line=="OK")	sendCommand("AT+IFC=2,2;+CGREG=1", CONNECT_1);
 				} break;
 				case CONNECT_1: {
-					if (line=="OK") sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
+					if (line=="OK") {
+						sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
+						response_counter = 0;
+					}
 				} break;
 				case CONNECT_2: {
 					static bool has_bearer_profile = false;
@@ -240,22 +288,34 @@ namespace {
 						misc::tokenize(line, toks);
 						has_bearer_profile = toks[1]=="1";
 						logger.println(String("has_bearer_profile: ") + has_bearer_profile);
+						response_counter++;
 					} else if (line=="OK") {
+						response_counter++;
+					}
+					if (response_counter==2) {
 						if (has_bearer_profile) {
-							sendCommand("AT+CGREG?", OFFLINE);
+							sendCommand("AT+CGREG?", CONNECT_4);
+							response_counter=0;
 						} else {
 							sendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", CONNECT_3);
 						}
 					}
 				} break;
 				case CONNECT_3: {
-					if (line=="OK") sendCommand("AT+CGREG?", OFFLINE);
+					if (line=="OK") {
+						sendCommand("AT+CGREG?", CONNECT_4);
+						response_counter=0;
+					}
 				} break;
-				case OFFLINE: {
-					logger.println("OFFLINE");
+				case CONNECT_4: {
+					if (line=="OK" || line.startsWith("+CGREG:")) response_counter++;
+					if (response_counter==2) setState(IDLE);
+				} break;				
+				case IDLE: {
+					logger.println("IDLE");
 				} break;
-				case ONLINE: {
-					logger.println("ONLINE");
+				case IGNORE: {
+					logger.println("IGNORE");
 				} break;
 				default: {
 					assert(!"Message received on gsm-rx while in an invalid state!");
@@ -278,8 +338,8 @@ namespace {
 				}
 			});
 			at_chan.subscribe([&](unsigned long time){
-				if (state==SYNCING) {
-					sendCommand("AT", SYNCING);
+				if (state==SYNCING_1) {
+					serial.println("AT");
 					at_chan.postAt(time+200);
 				}
 			});
@@ -288,7 +348,7 @@ namespace {
 		void begin()
 		{
 			serial.begin();
-			sendCommand("AT", SYNCING);
+			state = SYNCING_1;
 			at_chan.post();
 		}
 

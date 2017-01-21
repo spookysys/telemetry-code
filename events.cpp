@@ -56,7 +56,7 @@ namespace events
 			return *this;
 		};
 		
-		virtual Process& setPeriod(long long period) 
+		virtual Process& setPeriod(unsigned long period) 
 		{
 			this->period = period;
 			return *this;  
@@ -79,7 +79,8 @@ namespace events
 
 	Process& Process::make(const char* name)
 	{
-		return *new ProcessImpl(name);
+		auto tmp = new ProcessImpl(name);
+		return *tmp;
 	}
 
 
