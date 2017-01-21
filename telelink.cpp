@@ -83,6 +83,7 @@ namespace {
 				}
 			}
 
+
 			bool hasLine() 
 			{
 				return num_newlines > 0;
@@ -177,85 +178,119 @@ namespace {
 			CONNECT_2,
 			CONNECT_3,
 			CONNECT_4,
-			OFFLINE,
-			ONLINE
+			CONNECT_5,
+			IDLE,
+			IGNORE
 		};
 		State state = CLOSED;
+		bool online = false;
+
+
+		static const unsigned long command_delay = 2000;
 
 		void setState(State new_state)
 		{
-			logger.println(String("GSM state ") + state + "->" + new_state);
-			state = new_state;
+			static auto chan = events::Channel<State>::make("gsm_state").subscribe([&](unsigned long time, State new_state) {
+				logger.println(String(new_state));
+				state = new_state;
+			});
+			chan.postIn(command_delay, new_state);
+			state = IGNORE;
+			logger.println("[]");
 		}
 
 		void sendCommand(const char* command, State new_state, unsigned long timeout=10000)
 		{
-			logger.println(String("GSM state ") + state + "->" + new_state + ": " + command);
-			state = new_state;
-			static auto command_chan = events::Channel<const char*>::make("gsm_command").subscribe([&](unsigned long time, const char* command) {
+			static auto chan = events::Channel<const char*, State>::make("gsm_command").subscribe([&](unsigned long time, const char* command, State new_state) {
+				logger.println(String(new_state));
+				state = new_state;
 				serial.println(command);
 			});
-			command_chan.post(command);
+			chan.postIn(command_delay, command, new_state);
+			state = IGNORE;
+			logger.println("[]");
 		}
+
 
 		void callback(unsigned long time, const String& line)
 		{
-			// +CGREG: online/offline
+			// online/offline
 			if (line.startsWith("+CGREG:")) {
+				// Interpret status
 				int status = String(line[line.length()-1]).toInt();
-				logger.println(String("Network status: ") + status);
-				if (state<ONLINE && (status==1 || status==5)) {
-					setState(ONLINE);
-				} else if (state==ONLINE && (status==0 || status==2)) {
-					setState(OFFLINE);
+				if (status==1 || status==5) {
+					online = true;
+					logger.println("Going online!");
+				} else if (status==0 || status==2) {
+					online = false;
+					logger.println("Going offline!");
 				} else assert(!"Unexpected network status");
-				return;
+
+				// Unsolicited? return!
+				if (line.length() == 9) return;
+				else assert(line.length()==11);
 			}
 
 			// Signal strength
 			if (line.startsWith("+CSQ:")) {
 				int signal_strength = line.substring(6, line.indexOf(',')).toInt();
 				logger.println(String("Signal strength: ") + signal_strength);
+				return;
 			}
 
 			// ERROR? Reboot
-			//if (line=="ERROR") {
+			if (line=="ERROR") {
 				//sendCommand("AT+CPOWD=0", CLOSED);
-			//}
-
+				sendCommand("AT+CFUN=1,1", CLOSED);
+			}
+			static int response_counter = 0;
 			switch (state) {
 				case CLOSED: {
 					logger.println("CLOSED");
 				} break;
 				case SYNCING: {
-					if (line=="OK")	sendCommand("AT+IFC=2,2;+CGREG=1", CONNECT_1);
+					if (line=="OK")	sendCommand("AT+IFC=2,2;+CGREG=0", CONNECT_1);
 				} break;
 				case CONNECT_1: {
-					if (line=="OK") sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
+					if (line=="OK") {
+						sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
+						response_counter = 0;
+					}
 				} break;
 				case CONNECT_2: {
 					static bool has_bearer_profile = false;
-					if (line.startsWith("+SAPBR:")) {
+					if (line.startsWith("+SAPBR:")) { // Problem: this is coming after "OK"
 						std::array<String, 2> toks;
 						misc::tokenize(line, toks);
 						has_bearer_profile = toks[1]=="1";
 						logger.println(String("has_bearer_profile: ") + has_bearer_profile);
+						response_counter++;
 					} else if (line=="OK") {
+						response_counter++;
+					}
+					if (response_counter==2) {
 						if (has_bearer_profile) {
-							sendCommand("AT+CGREG?", OFFLINE);
+							sendCommand("AT+CGREG?;+CGREG=1", CONNECT_4);
+							response_counter = 0;
 						} else {
 							sendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\";+SAPBR=1,1", CONNECT_3);
 						}
 					}
 				} break;
 				case CONNECT_3: {
-					if (line=="OK") sendCommand("AT+CGREG?", OFFLINE);
+					if (line=="OK") sendCommand("AT+CGREG?;+CGREG=1", CONNECT_4);
+					response_counter = 0;
 				} break;
-				case OFFLINE: {
-					logger.println("OFFLINE");
+				case CONNECT_4: {
+					if (line=="OK" || line.startsWith("+CGREG:")) response_counter++;
+					if (response_counter==2) sendCommand("AT+CFUN=1,1", SYNCING);
 				} break;
-				case ONLINE: {
-					logger.println("ONLINE");
+				case IDLE: {
+					logger.println("IDLE");
+					
+				} break;
+				case IGNORE: {
+					logger.println("IGNORE");
 				} break;
 				default: {
 					assert(!"Message received on gsm-rx while in an invalid state!");
@@ -279,8 +314,8 @@ namespace {
 			});
 			at_chan.subscribe([&](unsigned long time){
 				if (state==SYNCING) {
-					sendCommand("AT", SYNCING);
-					at_chan.postAt(time+200);
+					serial.println("AT");
+					at_chan.postAt(time+300);
 				}
 			});
 		}
@@ -288,7 +323,7 @@ namespace {
 		void begin()
 		{
 			serial.begin();
-			sendCommand("AT", SYNCING);
+			state = SYNCING;
 			at_chan.post();
 		}
 
