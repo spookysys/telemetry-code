@@ -56,15 +56,21 @@ namespace events
 			return *this;
 		};
 		
-		virtual Process& setPeriod(long long period) 
+		virtual Process& setPeriod(unsigned long period) 
 		{
+			logger.println("Setting period for " + String(name) + " to " + String(period));
 			this->period = period;
-			return *this;  
+			return *this;
 		};
 		
 		void runIfNeeded(unsigned long loop_time)
 		{
 			if (loop_time >= this->last_start_time+period) {
+				//logger.println(String() + "Should run '" + name + "'!");
+				//logger.println("loop_time: " + String(loop_time));
+				//logger.println("last_start_time: " + String(last_start_time));
+				//logger.println("period: " + String(period));
+					
 				unsigned long start_time = millis();
 				for (auto& iter : callbacks) {
 					iter(start_time, start_time-last_start_time);
