@@ -3,7 +3,7 @@
 #include "sensors.hpp"
 #include "telelink.hpp"
 #include "events.hpp"
-#include "regtek.hpp"
+#include "sensor_analyzer.hpp"
 #include "watchdog.hpp"
 #include <Wire.h>
 
@@ -72,7 +72,7 @@ void setup() {
 	}
 		
 	// Init modules
-	sensors::setup(regtek::sensorUpdate);
+	sensors::setup(sensor_analyzer::sensorUpdate);
 	telelink::setup(nullptr, nullptr);
 	
 	// Indicate correct or errorenous operation by blinking

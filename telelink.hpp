@@ -9,5 +9,5 @@ namespace telelink
 		void (*gpsData)(float latitude, float longitude, float elevation)
 	);
 
-
+	void send(char* data, unsigned long num_bytes, bool realtime);
 }

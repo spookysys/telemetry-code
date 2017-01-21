@@ -1,11 +1,11 @@
-#include "regtek.hpp"
+#include "sensor_analyzer.hpp"
 #include "events.hpp"
 #include "sensors.hpp"
 #include <cmath>
 
 using namespace std;
 
-namespace regtek
+namespace sensor_analyzer
 {
 	Stream& logger = Serial;
 

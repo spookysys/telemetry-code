@@ -458,4 +458,9 @@ namespace telelink
 		gsm::setup();
 		life::postIn(0, life::INIT);
 	}
+
+	void send(char* data, unsigned long num_bytes)
+	{
+	}
+	
 }
