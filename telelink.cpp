@@ -50,9 +50,9 @@ namespace {
 				logger.println(String() + "num_newlines: " + num_newlines);
 				bool go=rx_full;
 				for (int i=rx_pop_idx; i!=rx_push_idx || go; i=(i+1)&(fifo_depth-1), go=false) {
-					logger.print(String("\\") + String(rx_fifo[i], HEX) + "'" + String(rx_fifo[i]) + "' ");
+					if (isprint(rx_fifo[i])) logger.write(rx_fifo[i]);
+					else logger.print(String("\\") + String(rx_fifo[rx_push_idx], HEX) + String("\\"));
 				}
-				logger.print(String("\\") + String(rx_fifo[rx_push_idx], HEX) + "'" + String(rx_fifo[rx_push_idx]) + "' ");
 				logger.println();
 			}
 
@@ -198,6 +198,7 @@ namespace {
 			CONNECT_2,
 			CONNECT_3,
 			CONNECT_4,
+			CONNECT_5,
 			IDLE,
 			IGNORE
 		};
@@ -273,7 +274,7 @@ namespace {
 					if (line=="OK")	sendCommand("AT", SYNCING_2);
 				} break;
 				case SYNCING_2: {
-					if (line=="OK")	sendCommand("AT+IFC=2,2;+CGREG=1", CONNECT_1);
+					if (line=="OK")	sendCommand("AT+CGREG=1", CONNECT_1); // "AT+IFC=2,2;+CGREG=1"
 				} break;
 				case CONNECT_1: {
 					if (line=="OK") {
@@ -309,8 +310,11 @@ namespace {
 				} break;
 				case CONNECT_4: {
 					if (line=="OK" || line.startsWith("+CGREG:")) response_counter++;
-					if (response_counter==2) setState(IDLE);
-				} break;				
+					if (response_counter==2) sendCommand("AT+IFC=2,2", CONNECT_5);
+				} break;
+				case CONNECT_5: {
+					if (line=="OK") setState(IDLE);
+				} break;
 				case IDLE: {
 					logger.println("IDLE");
 				} break;
