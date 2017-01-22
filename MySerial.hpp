@@ -106,18 +106,20 @@ public:
 
 	String popLine()
 	{
-		return rx_fifo.popLine();
+		auto x = rx_fifo.popLine();
+		logger.println(String("<") + x);
+		return x;
 	}
 
 	void println(const char* x=nullptr)
 	{
 		if (x) {
-			logger.println(name + "_tx>" + x);
+			logger.println(String(">") + x);
 			for (; *x; x++) {
 				waitForDataRegister();
 				sercom->writeDataUART(*x);
 			}
-		} else logger.println(name + "_tx>");
+		} else logger.println(">");
 		waitForDataRegister();
 		sercom->writeDataUART('\n');
 	}
