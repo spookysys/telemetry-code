@@ -6,21 +6,21 @@
 template<int rx_depth=1024>
 class MySerial
 {
+	String name;
+	Stream& logger = Serial;
+	CharFifo<rx_depth, true> rx_fifo;
 	SERCOM* sercom = nullptr;
 	
-	CharFifo<rx_depth, true> rx_fifo;
-
 	void waitForDataRegister()
 	{
+		if (sercom->isDataRegisterEmptyUART()) return;
 		for (int i=0; i<100; i++) {
 			delay(1);
 			if (sercom->isDataRegisterEmptyUART()) return;
 		}
-		assert(!"isDataRegisterEmptyUART stuck at high");
+		logger.write('§');
 	}
 
-	String name;
-	Stream& logger = Serial;
 public:
 	MySerial(const String& name) : name(name), rx_fifo(name+"_rx")
 	{}

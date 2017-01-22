@@ -1,3 +1,4 @@
+#include <functional>
 #include "telelink.hpp"
 #include "events.hpp"
 #include "pins.hpp"
@@ -12,33 +13,180 @@ using namespace telelink;
 //#define APN_PW "plus"
 
 
+
 namespace {
 	Stream& logger = Serial;
 
-	// Logic for communicating over gsm
-	namespace gsm {
 
-		MySerial<1024> serial("gsm");
+	class Module
+	{
+		std::function<void(bool)> status_cb;
+
+		bool isOn() { 
+			return digitalRead(pins::SC_STATUS); 
+		}
+		
+		enum Action
+		{
+			INITIAL,  // Need to turn on?
+			ON_LOW,   // pull PWRKEY low
+			ON_HIGH,  // pull PWRKEY high
+			ON_POLL,  // poll STATUS
+			ON_UARTS, // open uarts
+			ON_SYNC,  // sync gsm uart speed
+			OFF_LOW,  // pull PWRKEY low
+			OFF_HIGH_POLL // pull PWRKEY high and poll STATUS
+		};
+
+		events::Channel<Action, int> action_chan = events::Channel<Action, int>::make("telelink_module");
+
+		void doActionIn(unsigned long time, Action action, int repeat_count=0)
+		{
+			action_chan.postIn(time, action, repeat_count);
+		}
+
+		void doAction(Action action, int repeat_count=0)
+		{
+			switch (action) {
+			case INITIAL:
+				if (isOn()) {
+					logger.println("Module already on, go to sync");
+					doAction(ON_UARTS);
+				} else {
+					logger.println("Module off, turn on");
+					doAction(ON_LOW);
+				}
+				break;
+			case ON_LOW:
+				logger.println("Turning on");
+				digitalWrite(pins::SC_PWRKEY, LOW);
+				doActionIn(1001, ON_HIGH);
+				break;
+			case ON_HIGH:
+				digitalWrite(pins::SC_PWRKEY, HIGH);
+				doAction(ON_POLL);
+				break;
+			case ON_POLL:
+				if (isOn()) {
+					doAction(ON_UARTS);
+				} else if (repeat_count<23) {
+					doActionIn(100, ON_POLL, repeat_count+1);
+				} else {
+					logger.println("Failed turning module on. Retrying.");
+					doAction(ON_LOW);
+				}
+				break;
+			case ON_UARTS:
+				gsm_uart.beginHandshaked();
+				doAction(ON_SYNC);
+				break;
+			case ON_SYNC: {
+				bool ok = false;
+				while (gsm_uart.hasLine()) {
+					String line = gsm_uart.popLine();
+					logger.println(String("gsm_rx>") + line);
+					if (line=="OK") ok = true;
+				}
+				if (ok) {
+					logger.println("Module turned on");
+					status_cb(true);
+				} else if (repeat_count<11) {
+					gsm_uart.println("AT");
+					doActionIn(100, ON_SYNC, repeat_count+1);
+				} else {
+					logger.println("Could not sync GSM, only option is a hard restart");
+					hardRestart();
+				}
+			} break;
+			case OFF_LOW:
+				logger.println("Turning module off");
+				digitalWrite(pins::SC_PWRKEY, LOW);
+				doActionIn(1501, OFF_HIGH_POLL);
+				break;
+			case OFF_HIGH_POLL:
+				digitalWrite(pins::SC_PWRKEY, HIGH);
+				if (!isOn()) {
+					doActionIn(800, ON_LOW);
+				} else if (repeat_count<11) {
+					doActionIn(100, OFF_HIGH_POLL, repeat_count+1);
+				} else {
+					logger.println("Failed turning module off. Retrying.");
+					doAction(OFF_LOW);
+				}
+				break;
+			default:
+				assert(0);
+			}
+		}
+
+		void hardRestart() 
+		{
+			logger.println("Hard restart initiated");
+			status_cb(false);
+			doAction(OFF_LOW);
+		}
+
+	public:
+		MySerial<1024> gsm_uart;
+
+		Module() : gsm_uart("gsm_uart") {}
+
+		// turn on
+		void begin(std::function<void(bool)> status_cb)
+		{
+			this->status_cb = status_cb;
+			action_chan.subscribe([&](unsigned long time, Action action, int repeat_count) {
+				this->doAction(action, repeat_count);
+			});
+			pinMode(pins::SC_STATUS, INPUT);
+			pinMode(pins::SC_PWRKEY, OUTPUT);
+			digitalWrite(pins::SC_PWRKEY, HIGH);
+			doActionIn(500, INITIAL);
+		}
+
+		// restart
+		void restart() {
+			logger.println("Soft restart initiated");
+			status_cb(false);
+			gsm_uart.println("AT+CFUN=1,1");
+			doActionIn(500, ON_SYNC, 0);
+		}
+
+	} module;
+} // namespace {}
+
+// ISR
+void SERCOM2_Handler()
+{
+	module.gsm_uart.irqHandler();
+}
+
+
+
+namespace 
+{
+
+	// Logic for communicating over gsm
+	class GsmClient 
+	{
 
 		// current state
 		enum State 
 		{
-			CLOSED = 0,
-			SYNCING_1,
-			SYNCING_2,
+			INVALID = -1,
+			IGNORE = 0,
 			CONNECT_1,
 			CONNECT_2,
 			CONNECT_3,
 			CONNECT_4,
-			CONNECT_5,
-			IDLE,
-			IGNORE
+			IDLE
 		};
-		State state = CLOSED;
+
+		bool module_up = false;
 		bool online = false;
+		State state = INVALID;
 
 		static const unsigned long command_delay = 2000;
-
 
 		void setState(State new_state)
 		{
@@ -56,15 +204,19 @@ namespace {
 			static auto chan = events::Channel<const char*, State>::make("gsm_command").subscribe([&](unsigned long time, const char* command, State new_state) {
 				logger.println(String(new_state));
 				state = new_state;
-				serial.println(command);
+				module.gsm_uart.println(command);
 			});
 			chan.postIn(command_delay, command, new_state);
 			state = IGNORE;
 			logger.println("[]");
 		}
 
+		void start()
+		{
+			sendCommand("AT+IFC=2,2", CONNECT_1);
+		}
 
-		void callback(unsigned long time, const String& line)
+		void processLine(const String& line)
 		{
 			// online/offline
 			if (line.startsWith("+CGREG:")) {
@@ -87,27 +239,17 @@ namespace {
 			if (line.startsWith("+CSQ:")) {
 				int signal_strength = line.substring(6, line.indexOf(',')).toInt();
 				logger.println(String("Signal strength: ") + signal_strength);
+				return;
 			}
 
-			// ERROR? Reboot
+			// ERROR? Restart module
 			if (line=="ERROR") {
-				//sendCommand("AT+CPOWD=0", CLOSED);
-				logger.println("Restarting SIM868 module");
-				sendCommand("AT+CFUN=1,1", SYNCING_1);
+				module.restart();
 				return;
 			}
 
 			static int response_counter = 0;
 			switch (state) {
-				case CLOSED: {
-					logger.println("CLOSED");
-				} break;
-				case SYNCING_1: {
-					if (line=="OK")	sendCommand("AT", SYNCING_2);
-				} break;
-				case SYNCING_2: {
-					if (line=="OK")	sendCommand("AT+CGREG=1", CONNECT_1); // "AT+IFC=2,2;+CGREG=1"
-				} break;
 				case CONNECT_1: {
 					if (line=="OK") {
 						sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
@@ -142,10 +284,7 @@ namespace {
 				} break;
 				case CONNECT_4: {
 					if (line=="OK" || line.startsWith("+CGREG:")) response_counter++;
-					if (response_counter==2) sendCommand("AT+IFC=2,2", CONNECT_5);
-				} break;
-				case CONNECT_5: {
-					if (line=="OK") setState(IDLE);
+					if (response_counter==2) setState(IDLE);
 				} break;
 				case IDLE: {
 					logger.println("IDLE");
@@ -153,6 +292,7 @@ namespace {
 				case IGNORE: {
 					logger.println("IGNORE");
 				} break;
+				case INVALID:
 				default: {
 					assert(!"Message received on gsm-rx while in an invalid state!");
 					setState(CONNECT_1);
@@ -160,135 +300,45 @@ namespace {
 			}
 		}
 
-		// used for syncing with "AT" commands
-		static auto& sync_chan = events::Channel<>::make("gsm_sync");
+	public:
 
-		// called once at init
 		void setup()
 		{
-			serial.rxLineChan().subscribe([&](unsigned long time) {
-				while (serial.hasLine()) {
-					auto tmp = serial.popLine();
-					logger.println(String("gsm_rx>") + tmp);
-					callback(time, tmp);
-				}
-			});
-			sync_chan.subscribe([&](unsigned long time){
-				if (state==SYNCING_1) {
-					serial.println("AT");
-					sync_chan.postAt(time+200);
+			module.gsm_uart.rxLineChan().subscribe([&](unsigned long time) {
+				while (module_up && module.gsm_uart.hasLine()) {
+					auto line = module.gsm_uart.popLine();
+					logger.println(String("gsm_rx>") + line);
+					processLine(line);
 				}
 			});
 		}
 
-		void begin()
+		void moduleUp(bool module_up)
 		{
-			serial.beginHandshaked();
-			state = SYNCING_1;
-			sync_chan.post();
+			this->module_up = module_up;
+			if (module_up) start();
 		}
 
+	} gsm_client;
 
-	} // namespace gsm {}
-
-	// Logic for poweron, reboot, etc
-	namespace life {
-
-		enum State
-		{
-			INIT = 0,
-			PWRKEY_LOW = 1,
-			PWRKEY_HIGH = 2,
-			AWAIT_STATUS = 3,
-			TURNED_ON = 4
-		};
-
-		void callback(unsigned long time, State state, unsigned long timeout);
-
-		auto& connect_channel = events::Channel<State, unsigned long>::make("telelink_life").subscribe(callback);
-
-		void postIn(unsigned long in_time, State state, unsigned long timeout=0)
-		{
-			connect_channel.postIn(in_time, state, timeout);
-		}
-
-		bool isOn() 
-		{
-			return digitalRead(pins::SC_STATUS);
-		}
-
-		void callback(unsigned long time, State state, unsigned long timeout)
-		{
-			if (state>=TURNED_ON && !isOn()) {
-				assert(!"No power on SimCom module");
-				postIn(0, INIT);
-				return;
-			}
-
-			switch(state) {
-				case INIT: {
-					logger.println("INIT: Initializing PWRKEY high");
-					pinMode(pins::SC_STATUS, INPUT);
-					pinMode(pins::SC_PWRKEY, OUTPUT);
-					digitalWrite(pins::SC_PWRKEY, HIGH);
-					postIn(500, PWRKEY_LOW);
-				} break;
-				case PWRKEY_LOW: {
-					logger.println("PWRKEY_LOW");
-					if (isOn()) {
-						logger.println("Already turned on, skipping to state TURNED_ON");
-						postIn(0, TURNED_ON);
-					} else {
-						digitalWrite(pins::SC_PWRKEY, LOW);
-						postIn(1000, PWRKEY_HIGH);
-					}
-				} break;
-				case PWRKEY_HIGH: {
-					logger.println("PWRKEY_HIGH");
-					digitalWrite(pins::SC_PWRKEY, HIGH);
-					postIn(0, AWAIT_STATUS, time+2200);
-				} break;
-				case AWAIT_STATUS: {
-					if (time < timeout && !isOn()) {
-						logger.println("AWAIT_STATUS");
-						postIn(100, AWAIT_STATUS, timeout);
-					} else {
-						postIn(0, TURNED_ON);
-					}
-				} break;
-				case TURNED_ON: {
-					logger.println("TURNED_ON - good to go!");
-					gsm::begin();
-				} break;
-				default: {
-					assert(0);
-					postIn(0, INIT);
-				}
-			}
-		}
-	} // namespace life {}
 } // namespace {}
 
-
-void SERCOM2_Handler()
-{
-	gsm::serial.irqHandler();
-}
 
 
 
 namespace telelink 
 {
-
-
 	void setup(
 		void (*gpsPps)(), 
 		void (*gpsData)(float latitude, float longitude, float elevation)
 	)
 	{	
-		logger.println("Connecting");
-		gsm::setup();
-		life::postIn(0, life::INIT);
+		gsm_client.setup();
+		module.begin(
+			[&](bool module_up) { 
+				gsm_client.moduleUp(module_up);
+			}
+		);
 	}
 
 	void send(char* data, unsigned long num_bytes)
