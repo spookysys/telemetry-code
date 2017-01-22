@@ -108,6 +108,7 @@ namespace {
 					gsm_uart.println("AT");
 					doActionIn(100, ON_SYNC, retries-1);
 				} else {
+					assert(0);
 					logger.println("Could not sync GSM, only option is a hard restart");
 					doAction(OFF_LOW);
 				}
@@ -124,6 +125,7 @@ namespace {
 				} else if (retries>0) {
 					doActionIn(100, OFF_HIGH_POLL, retries-1);
 				} else {
+					assert(0);
 					logger.println("Failed turning module off. Retrying.");
 					doAction(OFF_LOW);
 				}
@@ -137,6 +139,7 @@ namespace {
 					logger.write('.');
 					doActionIn(100, AWAIT_RESTART, retries-1);
 				} else {
+					assert(0);
 					logger.println();
 					logger.println("Module not restarting. Initiating hard restart.");
 					doAction(OFF_LOW);
@@ -144,6 +147,7 @@ namespace {
 				break;				
 			default:
 				assert(0);
+				logger.println("Invalid action");
 			}
 		}
 
@@ -215,46 +219,83 @@ namespace
 		bool online = false;
 		State state = INVALID;
 
-		static const unsigned long command_delay = 2000;
+
+		// set to 2000 for "debug mode"
+		static const unsigned long debug_delay = 0;
 
 		void setState(State new_state)
 		{
+			if (debug_delay) setStateIn(0, new_state);
+			else {
+				logger.println(String("[")+new_state+"]");
+				state = new_state;
+			}
+		}
+
+		void setStateIn(unsigned long time, State new_state)
+		{
+			time += debug_delay;
 			static auto chan = events::Channel<State>::make("gsm_state").subscribe([this](unsigned long time, State new_state) {
-				logger.println(String(new_state));
+				logger.println(String("[")+new_state+"]");
 				state = new_state;
 			});
-			chan.postIn(command_delay, new_state);
+			chan.postIn(time, new_state);
 			state = IGNORE;
 			logger.println("[]");
 		}
 
 		void sendCommand(const String& command, State new_state, unsigned long timeout=10000)
 		{
+			if (debug_delay) sendCommandIn(0, command, new_state, timeout);
+			else {
+				logger.println(String("[")+new_state+"]");
+				state = new_state;
+				module.gsm_uart.println(command);
+			}
+		}
+
+		void sendCommandIn(unsigned long time, const String& command, State new_state, unsigned long timeout=10000)
+		{
+			time += debug_delay;
 			static auto chan = events::Channel<String, State>::make("gsm_command").subscribe([this](unsigned long time, String command, State new_state) {
-				logger.println(String(new_state));
+				logger.println(String("[")+new_state+"]");
 				state = new_state;
 				module.gsm_uart.println(command);
 			});
-			chan.postIn(command_delay, command, new_state);
+			chan.postIn(time, command, new_state);
 			state = IGNORE;
 			logger.println("[]");
 		}
 
 		void simulateReply(const String& reply, State new_state)
 		{
+			if (debug_delay) simulateReplyIn(0, reply, new_state);
+			else {
+				logger.println(String("[")+new_state+"]");
+				logger.println(String("|")+reply);
+				state = new_state;
+				processLine(reply);
+			}
+		}
+
+		void simulateReplyIn(unsigned long time, const String& reply, State new_state)
+		{
+			time += debug_delay;
 			static auto chan = events::Channel<String, State>::make("gsm_command").subscribe([this](unsigned long time, String reply, State new_state) {
-				logger.println(String(new_state));
+				logger.println(String("[")+new_state+"]");
+				logger.println(String("|")+reply);
 				state = new_state;
 				processLine(reply);
 			});
-			chan.postIn(command_delay, reply, new_state);
+			chan.postIn(time, reply, new_state);
 			state = IGNORE;
 			logger.println("[]");
 		}
 
 		void powerOnBootstrap()
 		{
-			sendCommand("AT+IFC=2,2", CONNECT_1);
+			// "AT+SAPBR=2,1" fails with ERROR unless I give the module some seconds to start up
+			sendCommandIn(3000, "AT+IFC=2,2", CONNECT_1);
 		}
 
 		void processLine(const String& line)
@@ -285,6 +326,7 @@ namespace
 
 			// ERROR? Restart module
 			if (line=="ERROR") {
+				assert(0);
 				logger.println("Error detected, restarting module");
 				module.restart();
 				return;
@@ -294,6 +336,7 @@ namespace
 			switch (state) {
 				case CONNECT_1: {
 					if (line=="OK") {
+						// a certain delay seems to be needed here
 						sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
 						response_counter = 0;
 					}
@@ -303,7 +346,7 @@ namespace
 					if (line.startsWith("+SAPBR:")) {
 						std::array<String, 2> toks;
 						misc::tokenize(line, toks);
-						has_bearer_profile = toks[1]=="1";
+						has_bearer_profile = toks[1]=="0" || toks[1]=="1";
 						logger.println(String("has_bearer_profile: ") + has_bearer_profile);
 						response_counter++;
 					} else if (line=="OK") {
@@ -311,7 +354,7 @@ namespace
 					}
 					if (response_counter==2) {
 						if (!has_bearer_profile) sendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\"", CONNECT_3);
-						else simulateReply("OK", CONNECT_3);
+						else simulateReply("OK", CONNECT_4);
 					}
 				} break;
 				case CONNECT_3: {
