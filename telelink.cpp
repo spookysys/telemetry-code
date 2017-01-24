@@ -205,7 +205,7 @@ namespace
 {
 
 	// Logic for communicating over gsm
-	class GsmClient 
+	class GsmConnector 
 	{
 
 		// current state
@@ -226,7 +226,7 @@ namespace
 			CONNECTED
 		};
 
-		bool module_power = false;
+		bool alse;
 		bool online = false;
 		State state = INVALID;
 
@@ -305,119 +305,120 @@ namespace
 
 		void powerOnBootstrap()
 		{
-			// "AT+SAPBR=2,1" fails with ERROR unless I give the module some seconds to start up
+			// Fails with ERROR unless I give the module some seconds to start up
 			sendCommandIn(3000, "AT+IFC=2,2", CONNECT_1);
 		}
 
-		void processLine(const String& line)
+		void processLine(String line)
 		{
-			// Registered on network?
-			if (line.startsWith("+CGREG:")) {
-				// Interpret status
-				int status = String(line[line.length()-1]).toInt();
-				if (status==1 || status==5) {
-					online = true;
-					logger.println("Registered on network");
-				} else if (status==0 || status==2) {
-					online = false;
-					logger.println("Not registered on network");
-				} else assert(!"Unexpected network status");
-
-				// Unsolicited? return!
-				if (line.length() == 9) return;
-				else assert(line.length()==11);
-			}
-
-			// GPRS connected?
-			if (line.startsWith("+CGATT:")) {
-				int status = String(line[line.length()-1]).toInt();
-				if (status) logger.println("Attached to GPRS Service");
-				else logger.println("Not attached to GPRS Service");
-			}
-
-			// Signal strength
-			if (line.startsWith("+CSQ:")) {
-				int signal_strength = line.substring(6, line.indexOf(',')).toInt();
-				logger.println(String("Signal strength: ") + signal_strength);
-			}
-
-			// ERROR? Restart module
-			if (line=="ERROR") {
-				if (state>=CONNECT_6 || state<=CONNECT_8) {
-					logger.println("This error is expected");
-				} else {
-					assert(0);
-					logger.println("Error detected, restarting module");
-					module.restart();
-					return;
-				}
-			}
 
 			static int response_counter = 0;
 			switch (state) {
 				case CONNECT_1: {
-					if (line=="OK") {
-						// a certain delay seems to be needed here
-						sendCommand("AT+SAPBR=2,1", CONNECT_2); // AT+CSQ;+SAPBR=2,1
+					if (line=="ERROR") module.restart();
+					else if (line=="OK") {
+						sendCommand("AT+SAPBR=2,1;+CGREG=1;+CGREG?;+CGATT?;+CSQ", CONNECT_2);
 						response_counter = 0;
 					}
 				} break;
 				case CONNECT_2: {
-					static bool has_bearer_profile = false;
+					// Restart on error
+					if (line=="ERROR") module.restart();
+
+					// Registered on network?
+					if (line.startsWith("+CGREG:")) {
+						// Interpret status
+						int status = String(line[line.length()-1]).toInt();
+						if (status==1 || status==5) {
+							online = true;
+							logger.println("Registered on network");
+						} else if (status==0 || status==2 || status==3) {
+							online = false;
+							logger.println("Not registered on network");
+						} else assert(!"Unexpected network status");
+
+						// Unsolicited is 9, solicited is 11
+						assert(line.length()==9 || line.length()==11);
+						if (line.length()==11) response_counter++;
+					}
+
+					// GPRS connected?
+					if (line.startsWith("+CGATT:")) {
+						int status = String(line[line.length()-1]).toInt();
+						if (status) logger.println("Attached to GPRS Service");
+						else logger.println("Not attached to GPRS Service");
+						response_counter++;
+					}
+
+					// Signal strength
+					if (line.startsWith("+CSQ:")) {
+						int signal_strength = line.substring(6, line.indexOf(',')).toInt();
+						logger.println(String("Signal strength: ") + signal_strength);
+						response_counter++;
+					}
+
+					// Bearer profile query
 					if (line.startsWith("+SAPBR:")) {
 						std::array<String, 2> toks;
 						misc::tokenize(line, toks);
-						has_bearer_profile = toks[1]=="0" || toks[1]=="1";
-						logger.println(String("has_bearer_profile: ") + has_bearer_profile);
-						response_counter++;
-					} else if (line=="OK") {
+						bool has_bearer_profile = toks[1]=="0" || toks[1]=="1";
+						if (has_bearer_profile) logger.println("Has bearer profile");
+						else logger.println("Does not have bearer profile");
 						response_counter++;
 					}
-					if (response_counter==2) {
-						if (!has_bearer_profile) sendCommand("AT+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\"", CONNECT_3);
-						else simulateReply("OK", CONNECT_4);
+
+					// Final OK
+					if (line=="OK") response_counter++;
+
+					// Trigger when all expected responses received and we are on line
+					if (response_counter==5 && online) {
+						sendCommand("AT+CGREG=0;+SAPBR=3,1,\"Contype\",\"GPRS\";+SAPBR=3,1,\"APN\",\"" APN "\"", CONNECT_3);
 					}
 				} break;
 				case CONNECT_3: {
-					if (line=="OK") sendCommand("AT+SAPBR=1,1", CONNECT_4);
+					if (line=="ERROR" || line=="OK") sendCommand("AT+SAPBR=1,1", CONNECT_4);
 				} break;
 				case CONNECT_4: {
-					if (line=="OK") {
-						sendCommand("AT+CGREG?;+CGATT?;+CSQ", CONNECT_5);
-						response_counter=0;
-					}
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CIPMODE=1", CONNECT_5);
 				} break;
 				case CONNECT_5: {
-					if (line=="OK" || line.startsWith("+CGREG:") || line.startsWith("+CGATT:") || line.startsWith("+CSQ:")) response_counter++;
-					if (response_counter==4) {
-						sendCommand("AT+CIPMODE=1", CONNECT_6);
-					}
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CSTT=" APN, CONNECT_6);
 				} break;
 				case CONNECT_6: {
-					if (line=="ERROR" || line=="OK") sendCommand(String("AT+CSTT=") + APN, CONNECT_7);
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CIICR", CONNECT_7);
 				} break;
 				case CONNECT_7: {
-					if (line=="ERROR" || line=="OK") sendCommand("AT+CIICR", CONNECT_8);
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CIFSR", CONNECT_8);
 				} break;
 				case CONNECT_8: {
-					if (line=="ERROR" || line=="OK") sendCommand("AT+CIFSR", CONNECT_9);
-				} break;
-				case CONNECT_9: {
 					std::array<String, 4> local_ip;
 					bool is_ip = misc::tokenize(line, local_ip, '.');
-					if (is_ip) {
-						sendCommand(String() + "AT+CIPSTART=\"TCP\",\"" + SERVER_IP + "\",\"" + SERVER_PORT + "\"", CONNECT_10);
+					if (line=="ERROR" || is_ip) {
+						sendCommand("AT+CIPCLOSE", CONNECT_9);
 						response_counter = 0;
 					}
 				} break;
+				case CONNECT_9: {
+					if (line=="ERROR" || line=="CLOSE OK") sendCommand(String() + "AT+CIPSTART=\"TCP\",\"" + SERVER_IP + "\",\"" + SERVER_PORT + "\"", CONNECT_10);
+				} break;
 				case CONNECT_10: {
-					if (line=="OK" || line=="CONNECT") response_counter++;
+					if (line=="ERROR") module.restart();
+					else if (line=="OK" || line=="CONNECT OK" || line=="CONNECT") response_counter++;
+					// last time it was "CONNECT" but I am sure I have seen "CONNECT OK"
 					if (response_counter==2) {
+						module.gsm_uart.println("Hello!");
 						setState(CONNECTED);
 					}
 				} break;
 				case CONNECTED: {
-					logger.println("CONNECTED");
+					if (line=="ERROR") {
+						module.restart();
+					} else if (line=="CLOSED") {
+						setState(IGNORE);
+						module.restart();
+					} else {
+						logger.println("meh");
+					}
 				} break;
 				case IGNORE: {
 					logger.println("IGNORE");
@@ -430,25 +431,32 @@ namespace
 			}
 		}
 
+		bool module_on = false;
 	public:
 
 		void setup()
 		{
 			module.gsm_uart.rxLineChan().subscribe([&](unsigned long time) {
-				while (module_power && module.gsm_uart.hasLine()) {
-					auto line = module.gsm_uart.popLine();
-					processLine(line);
+				while (module_on && module.gsm_uart.hasLine()) {
+					processLine(module.gsm_uart.popLine());
 				}
 			});
 		}
 
 		void modulePower(bool power)
 		{
-			this->module_power = power;
+			this->online = false;
+			this->module_on = power;
+			state = IGNORE;
 			if (power) powerOnBootstrap();
 		}
 
-	} gsm_client;
+		bool isConnected()
+		{
+			return module_on && (state == CONNECTED);
+		}
+
+	} gsm_link;
 
 } // namespace {}
 
@@ -462,17 +470,15 @@ namespace telelink
 		void (*gpsData)(float latitude, float longitude, float elevation)
 	)
 	{	
-		gsm_client.setup();
-
-		module.begin(
-			[&](bool power) { 
-				gsm_client.modulePower(power);
-			}
-		);
+		gsm_link.setup();
+		module.begin([&](bool power) { gsm_link.modulePower(power);	});
 	}
 
 	void send(char* data, unsigned long num_bytes)
 	{
+		if (gsm_link.isConnected()) {
+			//module.gsm_uart.println("Hello!");
+		}
 	}
 	
 }
