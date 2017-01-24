@@ -12,12 +12,13 @@ using namespace telelink;
 //#define APN_USER "lmno"
 //#define APN_PW "plus"
 
-
+#define SERVER_IP "www.google.com"
+#define SERVER_PORT 80
 
 namespace {
 	Stream& logger = Serial;
 
-
+	// Encapsulate power-on/-off and other low-level stuff for sim868 module
 	class Module
 	{
 		std::function<void(bool)> status_cb;
@@ -33,7 +34,7 @@ namespace {
 			ON_HIGH,  // pull PWRKEY high
 			ON_POLL,  // poll STATUS high
 			ON_UARTS, // open uarts
-			ON_SYNC,  // sync gsm uart speed
+			ON_SYNC,  // sync gsm baud
 			OFF_LOW,  // pull PWRKEY low
 			OFF_HIGH_POLL, // pull PWRKEY high and poll STATUS
 			AWAIT_RESTART  // poll STATUS low, then go to ON_POLL
@@ -94,9 +95,9 @@ namespace {
 			case ON_SYNC: {
 				bool done = false;
 				while (gsm_uart.hasLine()) {
-					auto x = gsm_uart.popLine();
-					if (x=="AT") sync_got_at = true;
-					else if (sync_got_at && x=="OK") {
+					auto tmp = gsm_uart.popLine();
+					if (tmp=="AT") sync_got_at = true;
+					else if (sync_got_at && tmp=="OK") {
 						sync_got_ok = true;
 						break;
 					}
@@ -110,7 +111,7 @@ namespace {
 				} else {
 					assert(0);
 					logger.println("Could not sync GSM, only option is a hard restart");
-					doAction(OFF_LOW);
+					hardRestart();
 				}
 			} break;
 			case OFF_LOW:
@@ -127,13 +128,15 @@ namespace {
 				} else {
 					assert(0);
 					logger.println("Failed turning module off. Retrying.");
-					doAction(OFF_LOW);
+					hardRestart();
 				}
 				break;
 			case AWAIT_RESTART:
+				while (gsm_uart.hasLine()) gsm_uart.popLine();
 				if (!isOn()) {
 					logger.println();
-					logger.println("SC_STATUS went low");
+					logger.println("SC_STATUS went low, closing UARTs");
+					gsm_uart.end();
 					doActionIn(100, ON_POLL, 30);
 				} else if (retries>0) {
 					logger.write('.');
@@ -142,7 +145,7 @@ namespace {
 					assert(0);
 					logger.println();
 					logger.println("Module not restarting. Initiating hard restart.");
-					doAction(OFF_LOW);
+					hardRestart();
 				}
 				break;				
 			default:
@@ -157,6 +160,7 @@ namespace {
 
 		Module() : gsm_uart("gsm_uart") {}
 
+
 		// turn on
 		void begin(std::function<void(bool)> status_cb)
 		{
@@ -170,7 +174,7 @@ namespace {
 			doActionIn(100, INITIAL);
 		}
 
-		// restart
+		// Restart
 		void restart() {
 			logger.println("Restart initiated");
 			status_cb(false);
@@ -178,9 +182,11 @@ namespace {
 			doAction(AWAIT_RESTART, 10);
 		}
 
+		// Hard restart
 		void hardRestart() {
 			logger.println("Hard restart initiated");
 			status_cb(false);
+			gsm_uart.end();
 			doAction(OFF_LOW);
 		}
 
@@ -212,7 +218,12 @@ namespace
 			CONNECT_3,
 			CONNECT_4,
 			CONNECT_5,
-			IDLE
+			CONNECT_6,
+			CONNECT_7,
+			CONNECT_8,
+			CONNECT_9,
+			CONNECT_10,
+			CONNECTED
 		};
 
 		bool module_power = false;
@@ -300,16 +311,16 @@ namespace
 
 		void processLine(const String& line)
 		{
-			// online/offline
+			// Registered on network?
 			if (line.startsWith("+CGREG:")) {
 				// Interpret status
 				int status = String(line[line.length()-1]).toInt();
 				if (status==1 || status==5) {
 					online = true;
-					logger.println("Going online!");
+					logger.println("Registered on network");
 				} else if (status==0 || status==2) {
 					online = false;
-					logger.println("Going offline!");
+					logger.println("Not registered on network");
 				} else assert(!"Unexpected network status");
 
 				// Unsolicited? return!
@@ -317,19 +328,29 @@ namespace
 				else assert(line.length()==11);
 			}
 
+			// GPRS connected?
+			if (line.startsWith("+CGATT:")) {
+				int status = String(line[line.length()-1]).toInt();
+				if (status) logger.println("Attached to GPRS Service");
+				else logger.println("Not attached to GPRS Service");
+			}
+
 			// Signal strength
 			if (line.startsWith("+CSQ:")) {
 				int signal_strength = line.substring(6, line.indexOf(',')).toInt();
 				logger.println(String("Signal strength: ") + signal_strength);
-				return;
 			}
 
 			// ERROR? Restart module
 			if (line=="ERROR") {
-				assert(0);
-				logger.println("Error detected, restarting module");
-				module.restart();
-				return;
+				if (state>=CONNECT_6 || state<=CONNECT_8) {
+					logger.println("This error is expected");
+				} else {
+					assert(0);
+					logger.println("Error detected, restarting module");
+					module.restart();
+					return;
+				}
 			}
 
 			static int response_counter = 0;
@@ -362,16 +383,41 @@ namespace
 				} break;
 				case CONNECT_4: {
 					if (line=="OK") {
-						sendCommand("AT+CGREG?;+CGATT?", CONNECT_5);
+						sendCommand("AT+CGREG?;+CGATT?;+CSQ", CONNECT_5);
 						response_counter=0;
 					}
 				} break;
 				case CONNECT_5: {
-					if (line=="OK" || line.startsWith("+CGREG:") || line.startsWith("+CGATT:")) response_counter++;
-					if (response_counter==3) setState(IDLE);
+					if (line=="OK" || line.startsWith("+CGREG:") || line.startsWith("+CGATT:") || line.startsWith("+CSQ:")) response_counter++;
+					if (response_counter==4) {
+						sendCommand("AT+CIPMODE=1", CONNECT_6);
+					}
 				} break;
-				case IDLE: {
-					logger.println("IDLE");
+				case CONNECT_6: {
+					if (line=="ERROR" || line=="OK") sendCommand(String("AT+CSTT=") + APN, CONNECT_7);
+				} break;
+				case CONNECT_7: {
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CIICR", CONNECT_8);
+				} break;
+				case CONNECT_8: {
+					if (line=="ERROR" || line=="OK") sendCommand("AT+CIFSR", CONNECT_9);
+				} break;
+				case CONNECT_9: {
+					std::array<String, 4> local_ip;
+					bool is_ip = misc::tokenize(line, local_ip, '.');
+					if (is_ip) {
+						sendCommand(String() + "AT+CIPSTART=\"TCP\",\"" + SERVER_IP + "\",\"" + SERVER_PORT + "\"", CONNECT_10);
+						response_counter = 0;
+					}
+				} break;
+				case CONNECT_10: {
+					if (line=="OK" || line=="CONNECT") response_counter++;
+					if (response_counter==2) {
+						setState(CONNECTED);
+					}
+				} break;
+				case CONNECTED: {
+					logger.println("CONNECTED");
 				} break;
 				case IGNORE: {
 					logger.println("IGNORE");

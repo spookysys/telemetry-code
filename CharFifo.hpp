@@ -8,8 +8,8 @@ template<int depth, bool isrSafe>
 class CharFifo
 {
 	std::array<char, depth> data;
-	int push_idx = 0;
-	int pop_idx = 0;
+	volatile int push_idx = 0;
+	volatile int pop_idx = 0;
 	volatile bool full = false;
 	volatile uint16_t num_newlines = 0;
 
@@ -54,6 +54,16 @@ public:
 		}).setPeriod(period);
 	}
 	
+	void clear()
+	{
+		if (isrSafe) noInterrupts();
+		push_idx = 0;
+		pop_idx = 0;
+		full = false;
+		num_newlines = 0;
+		if (isrSafe) interrupts();
+	}
+
 	bool isFull()
 	{
 		return full;
@@ -61,10 +71,10 @@ public:
 
 	void push(char x)
 	{
+		assert(!full);
 		if (!full) {
 			data[push_idx] = x;
 			push_idx = wrap(push_idx + 1);
-			if (push_idx == depth) push_idx = 0;
 			full = (push_idx == pop_idx);
 			if (x=='\n' && num_newlines==0 && using_line_chan) {
 				line_chan.post();
@@ -72,7 +82,6 @@ public:
 			if (x=='\n') num_newlines++;
 		}
 	}
-
 
 	bool hasLine() 
 	{

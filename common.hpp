@@ -36,18 +36,21 @@ namespace misc
 		return dest.u;
 	}
 
+	// Returns:
+	// True if number of tokens in string matches elements in "toks" collection
 	template<typename T>
-	static void tokenize(const String& str, T& toks, char separator=',')
+	static bool tokenize(const String& str, T& toks, char separator=',')
 	{
-		int r_idx = -1;
-		bool err = false;
-		for (auto& iter : toks) {
-			int l_idx = r_idx+1;
+		int l_idx = 0, r_idx = 0;
+		auto tok = toks.begin();
+		while (r_idx>=0 && tok!=toks.end()) {
 			r_idx = str.indexOf(separator, l_idx);
-			if (l_idx<0) return;
-			else if (r_idx<0) iter = str.substring(l_idx);
-			else iter = str.substring(l_idx, r_idx);
+			if (r_idx<0) *tok = str.substring(l_idx);
+			else *tok = str.substring(l_idx, r_idx);
+			l_idx = r_idx + 1;
+			tok++;
 		}
+		return (tok == toks.end()) && (r_idx == -1);
 	}	
 }
 

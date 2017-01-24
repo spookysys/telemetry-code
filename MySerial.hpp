@@ -10,6 +10,7 @@ class MySerial
 	Stream& logger = Serial;
 	CharFifo<rx_depth, true> rx_fifo;
 	SERCOM* sercom = nullptr;
+	bool enabled = false;
 	
 	void waitForDataRegister()
 	{
@@ -24,6 +25,7 @@ class MySerial
 public:
 	MySerial(const String& name) : name(name), rx_fifo(name+"_rx")
 	{}
+
 
 	// Open the link
 	void beginHandshaked(
@@ -46,13 +48,15 @@ public:
 		pinPeripheral(pin_tx, pin_type_tx);
 		pinPeripheral(pin_rts, pin_type_rts);
 		pinPeripheral(pin_cts, pin_type_cts);
-		sercom->initUART(UART_INT_CLOCK, SAMPLE_RATE_x16, baudrate);
-		sercom->initFrame(UART_CHAR_SIZE_8_BITS, LSB_FIRST, SERCOM_NO_PARITY, SERCOM_STOP_BIT_1);
-		sercom->initPads(pad_tx, pad_rx);
-		sercom->enableUART();
 		pinMode(pin_cts, INPUT);
 		pinMode(pin_rts, OUTPUT);
 		digitalWrite(pin_rts, 0);
+		sercom->initUART(UART_INT_CLOCK, SAMPLE_RATE_x16, baudrate);
+		sercom->initFrame(UART_CHAR_SIZE_8_BITS, LSB_FIRST, SERCOM_NO_PARITY, SERCOM_STOP_BIT_1);
+		sercom->initPads(pad_tx, pad_rx);
+		rx_fifo.clear();
+		sercom->enableUART();
+		this->enabled = true;
 	}
 	
 	// Open the link
@@ -73,26 +77,34 @@ public:
 		sercom->initUART(UART_INT_CLOCK, SAMPLE_RATE_x16, baudrate);
 		sercom->initFrame(UART_CHAR_SIZE_8_BITS, LSB_FIRST, SERCOM_NO_PARITY, SERCOM_STOP_BIT_1);
 		sercom->initPads(pad_tx, pad_rx);
+		rx_fifo.clear();
 		sercom->enableUART();
+		this->enabled = true;
 	}
 	
+	void end()
+	{
+		this->enabled = false;
+		sercom->resetUART();
+		rx_fifo.clear();
+	}
+
 	// Handle bytes on the rx
 	void irqHandler()
 	{
-		if (!sercom) return;
-
-		while (sercom->availableDataUART()) {
-			char x = sercom->readDataUART();
-			rx_fifo.push(x);
-		}
-		
-		if (sercom->isUARTError()) {
-			assert(!"uart rx error");
-			sercom->acknowledgeUARTError();
-			sercom->clearStatusUART();
+		if (enabled) {
+			while (sercom->availableDataUART()) {
+				char x = sercom->readDataUART();
+				rx_fifo.push(x);
+			}
+			
+			if (sercom->isUARTError()) {
+				assert(!"uart rx error");
+				sercom->acknowledgeUARTError();
+				sercom->clearStatusUART();
+			}
 		}
 	}
-
 
 	events::Channel<>& rxLineChan()
 	{
@@ -106,9 +118,9 @@ public:
 
 	String popLine()
 	{
-		auto x = rx_fifo.popLine();
-		logger.println(String("<") + x);
-		return x;
+		auto tmp = rx_fifo.popLine();
+		logger.println(String("<") + tmp);
+		return tmp;
 	}
 
 	void println(const char* x=nullptr)
