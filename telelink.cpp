@@ -12,8 +12,8 @@ using namespace telelink;
 //#define APN_USER "lmno"
 //#define APN_PW "plus"
 
-#define SERVER_IP "www.google.com"
-#define SERVER_PORT 80
+#define SERVER_IP "telemetry-app-156617.appspot.com"
+#define SERVER_PORT 8080
 
 namespace {
 	Stream& logger = Serial;
@@ -403,8 +403,7 @@ namespace
 				} break;
 				case CONNECT_10: {
 					if (line=="ERROR") module.restart();
-					else if (line=="OK" || line=="CONNECT OK" || line=="CONNECT") response_counter++;
-					// last time it was "CONNECT" but I am sure I have seen "CONNECT OK"
+					else if (line=="OK" || line=="CONNECT OK" || line=="CONNECT") response_counter++; // last time it was "CONNECT" but I am sure I have seen "CONNECT OK"
 					if (response_counter==2) {
 						module.gsm_uart.println("Hello!");
 						setState(CONNECTED);
